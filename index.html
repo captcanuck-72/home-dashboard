@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Home">
+  <meta name="theme-color" content="#0c0e13">
+  <meta name="format-detection" content="telephone=no">
+  <link rel="apple-touch-icon" href="icon-180.png">
+  <link rel="icon" type="image/png" href="icon-192.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <title>Home</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="dash" id="dash">
+    <header class="top">
+      <div class="clock">
+        <div class="time" id="time"></div>
+        <div class="date" id="date"></div>
+      </div>
+
+      <section class="card weather" id="weather" aria-label="Weather"></section>
+
+      <div class="actions">
+        <button class="ai-btn" id="aiBtn" type="button"><span data-icon="sparkle"></span>Ask AI</button>
+        <div class="actions-row">
+          <button class="status" id="status" type="button"></button>
+          <button class="icon-btn" id="settingsBtn" type="button" aria-label="Settings"><span data-icon="sliders"></span></button>
+        </div>
+      </div>
+    </header>
+
+    <section class="card cal" aria-label="Calendar">
+      <div class="card-head">
+        <h2 class="card-title"><span data-icon="calendar"></span>Calendar</h2>
+        <span class="card-meta" id="calMeta"></span>
+      </div>
+      <div class="card-body" id="calBody"></div>
+    </section>
+
+    <section class="card tasks" aria-label="Tasks">
+      <div class="card-head">
+        <h2 class="card-title"><span data-icon="check"></span>Tasks</h2>
+        <span class="card-meta" id="tasksMeta"></span>
+      </div>
+      <div class="card-body" id="tasksBody"></div>
+    </section>
+
+    <section class="card grocery" aria-label="Grocery list">
+      <div class="card-head">
+        <h2 class="card-title"><span data-icon="cart"></span>Groceries</h2>
+        <span class="card-meta" id="groceryMeta"></span>
+      </div>
+      <form class="add-row" id="groceryForm" autocomplete="off">
+        <input id="groceryInput" type="text" placeholder="Add an item…" autocapitalize="sentences" autocorrect="on" spellcheck="false" aria-label="Grocery item">
+        <button type="button" class="round-btn mic" id="micBtn" aria-label="Add by voice"><span data-icon="mic"></span></button>
+        <button type="submit" class="round-btn add" aria-label="Add item"><span data-icon="plus"></span></button>
+      </form>
+      <div class="card-body" id="groceryBody"></div>
+    </section>
+
+    <section class="card cam" aria-label="Front door camera">
+      <div class="card-head">
+        <h2 class="card-title"><span data-icon="video"></span>Front door</h2>
+        <div class="card-tools" id="camTools"></div>
+      </div>
+      <div class="cam-view" id="camBody"></div>
+    </section>
+
+    <section class="card lunch" aria-label="School lunches">
+      <div class="card-head">
+        <h2 class="card-title"><span data-icon="utensils"></span><span id="lunchTitle">Lunches</span></h2>
+        <div class="card-tools">
+          <button class="mini-btn" id="lunchEdit" type="button" aria-label="Edit lunches"><span data-icon="edit"></span></button>
+        </div>
+      </div>
+      <div class="lunch-week">
+        <span id="lunchWeek"></span>
+        <span class="lunch-nav">
+          <button class="mini-btn sm" id="lunchPrev" type="button" aria-label="Previous week"><span data-icon="left"></span></button>
+          <button class="mini-btn sm" id="lunchNext" type="button" aria-label="Next week"><span data-icon="right"></span></button>
+        </span>
+      </div>
+      <div class="card-body" id="lunchBody"></div>
+    </section>
+  </main>
+
+  <div class="night" id="night" aria-hidden="true">
+    <div class="night-inner" id="nightInner">
+      <div class="night-time" id="nightTime"></div>
+      <div class="night-date" id="nightDate"></div>
+    </div>
+  </div>
+  <div class="modal-wrap" id="modalWrap"><div class="modal" id="modal" role="dialog" aria-modal="true"></div></div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
