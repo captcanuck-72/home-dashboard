@@ -17,12 +17,15 @@
  */
 
 const CONFIG = {
-  // Leave empty to merge every calendar that's ticked in Google Calendar's
-  // left sidebar. Or list specific calendar IDs (Google Calendar → Settings →
-  // the calendar → "Integrate calendar" → Calendar ID).
+  // Which calendars appear is easiest to choose on the dashboard itself:
+  // Settings → Calendars (checkboxes). Until you pick there, the dashboard
+  // shows every calendar ticked in Google Calendar's left sidebar — or, if you
+  // list calendar IDs here, only those (Google Calendar → Settings → the
+  // calendar → "Integrate calendar" → Calendar ID).
   CALENDAR_IDS: [],
 
-  // Calendars to leave out, by name or ID, e.g. ['Birthdays', 'Holidays in Canada'].
+  // Calendars that should never appear (not even as a checkbox), by name or ID,
+  // e.g. ['Birthdays', 'Holidays in Canada'].
   EXCLUDE_CALENDARS: [],
 
   // Rename calendars on the dashboard, by name or ID → new name.
@@ -107,6 +110,10 @@ function route_(action, p) {
     case 'all':
       return loadAll_(p);
 
+    case 'calendars':
+      // Every calendar the dashboard could show, for the checkboxes in its Settings.
+      return { calendars: pickableCalendars_() };
+
     case 'completeTask':
       if (!p.listId || !p.taskId) throw new Error('Missing listId/taskId');
       Tasks.Tasks.patch({ status: 'completed' }, p.listId, p.taskId);
@@ -138,7 +145,7 @@ function loadAll_(p) {
   const part = function (name, fn) {
     try { out[name] = fn(); } catch (err) { out.errors[name] = String((err && err.message) || err); }
   };
-  part('calendar', function () { return getEvents_(p.from, p.to); });
+  part('calendar', function () { return getEvents_(p.from, p.to, p.calendars); });
   part('tasks', getTasks_);
   part('groceries', getGroceries_);
   part('lunches', getLunches_);
@@ -147,7 +154,10 @@ function loadAll_(p) {
 
 /* ───────────────────────── calendars ───────────────────────── */
 
-function listCalendars_() {
+let CALS_CACHE_ = null; // per-execution cache
+
+function allCalendars_() {
+  if (CALS_CACHE_) return CALS_CACHE_;
   const all = [];
   let pageToken;
   do {
@@ -155,41 +165,70 @@ function listCalendars_() {
     (res.items || []).forEach(function (c) { all.push(c); });
     pageToken = res.nextPageToken;
   } while (pageToken);
+  CALS_CACHE_ = all;
+  return all;
+}
+
+function lower_(s) { return String(s || '').trim().toLowerCase(); }
+
+function isExcluded_(c) {
+  const exclude = CONFIG.EXCLUDE_CALENDARS.map(lower_);
+  return exclude.indexOf(lower_(c.id)) !== -1 || exclude.indexOf(lower_(c.summaryOverride || c.summary)) !== -1;
+}
+
+function displayCalendar_(c) {
+  const rename = {};
+  Object.keys(CONFIG.RENAME_CALENDARS).forEach(function (k) { rename[lower_(k)] = CONFIG.RENAME_CALENDARS[k]; });
+  let name = c.summaryOverride || c.summary || c.id;
+  if (rename[lower_(c.id)]) name = rename[lower_(c.id)];
+  else if (rename[lower_(name)]) name = rename[lower_(name)];
+  else if (c.primary && name.indexOf('@') !== -1) name = 'Me';
+  return { id: c.id, name: name, color: c.backgroundColor || '#4285f4' };
+}
+
+/**
+ * The calendars to show. `ids` comes from the checkboxes in the dashboard's
+ * Settings; when it's missing, fall back to CONFIG.CALENDAR_IDS, then to the
+ * calendars ticked in Google Calendar.
+ */
+function listCalendars_(ids) {
+  const all = allCalendars_();
+  if (typeof ids === 'string') ids = ids.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
 
   let chosen;
-  if (CONFIG.CALENDAR_IDS.length) {
+  if (Array.isArray(ids)) {
+    chosen = all.filter(function (c) { return ids.indexOf(c.id) !== -1; });
+  } else if (CONFIG.CALENDAR_IDS.length) {
     chosen = CONFIG.CALENDAR_IDS.map(function (id) {
       return all.filter(function (c) { return c.id === id; })[0] || { id: id, summary: id };
     });
   } else {
     chosen = all.filter(function (c) { return c.selected && !c.hidden; });
   }
+  return chosen.filter(function (c) { return !isExcluded_(c); }).map(displayCalendar_);
+}
 
-  const lower = function (s) { return String(s || '').trim().toLowerCase(); };
-  const exclude = CONFIG.EXCLUDE_CALENDARS.map(lower);
-  const rename = {};
-  Object.keys(CONFIG.RENAME_CALENDARS).forEach(function (k) { rename[lower(k)] = CONFIG.RENAME_CALENDARS[k]; });
-
-  return chosen
-    .filter(function (c) {
-      return exclude.indexOf(lower(c.id)) === -1 && exclude.indexOf(lower(c.summaryOverride || c.summary)) === -1;
-    })
+/** Every calendar the dashboard could show; `shownByDefault` marks the ones it uses before you pick. */
+function pickableCalendars_() {
+  const defaults = {};
+  listCalendars_().forEach(function (c) { defaults[c.id] = true; });
+  return allCalendars_()
+    .filter(function (c) { return !c.hidden && !isExcluded_(c); })
     .map(function (c) {
-      let name = c.summaryOverride || c.summary || c.id;
-      if (rename[lower(c.id)]) name = rename[lower(c.id)];
-      else if (rename[lower(name)]) name = rename[lower(name)];
-      else if (c.primary && name.indexOf('@') !== -1) name = 'Me';
-      return { id: c.id, name: name, color: c.backgroundColor || '#4285f4' };
+      return Object.assign(displayCalendar_(c), { shownByDefault: !!defaults[c.id], primary: !!c.primary });
+    })
+    .sort(function (a, b) {
+      return (b.primary - a.primary) || a.name.localeCompare(b.name);
     });
 }
 
-function getEvents_(from, to) {
+function getEvents_(from, to, calendarIds) {
   const start = from ? new Date(from) : startOfToday_();
   const end = to ? new Date(to) : new Date(start.getTime() + 7 * 864e5);
   if (isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start) throw new Error('Bad date range');
   if (end - start > 62 * 864e5) throw new Error('Date range too long (max 62 days)');
 
-  const cals = listCalendars_();
+  const cals = listCalendars_(calendarIds);
   const events = [];
   const byKey = {};
   const errors = [];
