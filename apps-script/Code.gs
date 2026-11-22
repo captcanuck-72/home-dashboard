@@ -135,6 +135,10 @@ function route_(action, p) {
       // Kept for dashboards from before the 'lists' action.
       return { calendars: pickableCalendars_() };
 
+    case 'addTask':
+      addTask_(p);
+      return { tasks: getTasks_(p.taskLists, p.groceryList, p.messageList) };
+
     case 'completeTask':
       if (!p.listId || !p.taskId) throw new Error('Missing listId/taskId');
       Tasks.Tasks.patch({ status: 'completed' }, p.listId, p.taskId);
@@ -384,12 +388,7 @@ function defaultTaskLists_(lists) {
  * The grocery and message lists are never shown here — they have their own cards.
  */
 function getTasks_(ids, groceryPref, messagePref) {
-  const own = [groceryListId_(groceryPref), messageListId_(messagePref)];
-  if (typeof ids === 'string') ids = ids.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
-  const candidates = visibleTaskLists_().filter(function (l) { return own.indexOf(l.id) === -1; });
-  const lists = Array.isArray(ids)
-    ? candidates.filter(function (l) { return ids.indexOf(l.id) !== -1; })
-    : defaultTaskLists_(candidates);
+  const lists = shownTaskLists_(ids, groceryPref, messagePref).shown;
   const items = [];
   lists.forEach(function (l) {
     listTasks_(l.id).forEach(function (t) {
@@ -404,7 +403,37 @@ function getTasks_(ids, groceryPref, messagePref) {
       });
     });
   });
-  return { lists: lists.map(function (l) { return l.title; }), items: items };
+  return {
+    lists: lists.map(function (l) { return l.title; }),
+    // for "add task" on the dashboard; isDefault marks DEFAULT_TASK_LISTS so new tasks start there
+    listInfo: lists.map(function (l) {
+      return { id: l.id, name: l.title, isDefault: CONFIG.DEFAULT_TASK_LISTS.map(lower_).indexOf(lower_(l.title)) !== -1 };
+    }),
+    items: items,
+  };
+}
+
+/** { shown: lists in the Tasks card, candidates: every list a task could go in (not groceries/messages) } */
+function shownTaskLists_(ids, groceryPref, messagePref) {
+  const own = [groceryListId_(groceryPref), messageListId_(messagePref)];
+  if (typeof ids === 'string') ids = ids.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+  const candidates = visibleTaskLists_().filter(function (l) { return own.indexOf(l.id) === -1; });
+  const shown = Array.isArray(ids)
+    ? candidates.filter(function (l) { return ids.indexOf(l.id) !== -1; })
+    : defaultTaskLists_(candidates);
+  return { shown: shown, candidates: candidates };
+}
+
+/** Add a task from the dashboard. Goes into `listId` if that's a normal task list, else the first list shown in the card. */
+function addTask_(p) {
+  const title = String(p.title || p.text || '').trim().slice(0, 500);
+  if (!title) throw new Error('Nothing to add');
+  const lists = shownTaskLists_(p.taskLists, p.groceryList, p.messageList);
+  const target = lists.candidates.filter(function (l) { return l.id === p.listId; })[0] || lists.shown[0] || lists.candidates[0];
+  if (!target) throw new Error('No task list to add to. Create one in Google Tasks first.');
+  const task = { title: title };
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(p.due || ''))) task.due = p.due + 'T00:00:00.000Z'; // Google Tasks keeps only the date
+  Tasks.Tasks.insert(task, target.id);
 }
 
 /* ───────────────────────── groceries (a Google Tasks list) ───────────────────────── */

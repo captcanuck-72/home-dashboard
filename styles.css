@@ -180,7 +180,8 @@ svg.ic.big { width: 2.6rem; height: 2.6rem; stroke-width: 1.5; }
 }
 .card-title .ic { color: var(--tint); width: 1.15rem; height: 1.15rem; }
 .card-meta { font-size: .8rem; font-weight: 650; color: var(--faint); white-space: nowrap; }
-.card-tools { display: flex; gap: .35rem; flex: none; }
+.card-tools { display: flex; align-items: center; gap: .35rem; flex: none; }
+.card-tools .card-meta { margin-right: .35rem; }
 .mini-btn {
   width: 2.15rem; height: 2.15rem; border-radius: 11px;
   display: grid; place-items: center; background: var(--card-2); color: var(--muted);
@@ -202,24 +203,28 @@ svg.ic.big { width: 2.6rem; height: 2.6rem; stroke-width: 1.5; }
 .card-error .ic { margin-top: .05rem; }
 
 /* ───────── weather ───────── */
-.weather { grid-area: weather; flex-direction: row; align-items: center; gap: 1.1rem; padding: .8rem 1.15rem; }
+.weather { grid-area: weather; flex-direction: row; align-items: center; gap: 1.1rem; padding: .8rem 1.15rem; cursor: pointer; }
 .wx-empty { color: var(--muted); font-size: .95rem; }
-.wx-empty .btn { margin-left: .6rem; }
+.wx-icon { display: block; }
 .wx-icon svg { width: 100%; height: 100%; display: block; overflow: visible; }
-.wx-now { display: flex; align-items: center; gap: .75rem; flex: 0 1 auto; min-width: 0; }
+.wx-now { display: flex; align-items: center; gap: .7rem; flex: none; text-align: left; border-radius: 16px; transition: transform .12s; }
 .wx-now > .wx-icon { width: 3.9rem; height: 3.9rem; flex: none; }
-.wx-temp { font-size: 3.4rem; font-weight: 300; line-height: 1; letter-spacing: -.04em; flex: none; font-variant-numeric: tabular-nums; }
-.wx-text { min-width: 0; max-width: 12.5rem; margin-left: .2rem; }
-.wx-desc { font-size: 1.05rem; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.wx-place { color: var(--faint); font-weight: 600; font-size: .85rem; margin-left: .35rem; }
-.wx-sub { font-size: .85rem; color: var(--muted); margin-top: .18rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.wx-sub b { color: var(--text); font-weight: 650; }
-.wx-sub.alert { color: var(--rain); font-weight: 650; }
+.wx-temp { font-size: 3.4rem; font-weight: 300; line-height: 1; letter-spacing: -.04em; font-variant-numeric: tabular-nums; }
+.wx-text { display: flex; flex-direction: column; align-items: flex-start; gap: .3rem; }
+.wx-feels { font-size: 1rem; font-weight: 600; color: var(--muted); white-space: nowrap; }
+.wx-tag { font-size: .75rem; font-weight: 750; color: var(--rain); background: rgba(90, 169, 255, .13); padding: .12rem .55rem; border-radius: 999px; white-space: nowrap; }
+.wx-tag.bad { color: var(--bad); background: rgba(255, 107, 107, .12); }
+.wx-tag.muted { color: var(--muted); background: var(--card-2); }
 .wx-days {
   flex: 1 1 0; min-width: 0; display: flex; justify-content: space-between; gap: .2rem;
   border-left: 1px solid var(--line); padding-left: .9rem;
 }
-.wx-day { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: .14rem; }
+.wx-day {
+  flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: .14rem;
+  padding: 0; border-radius: 12px; transition: transform .12s;
+}
+.wx-day > span { display: block; }
+.wx-now:active, .wx-day:active { transform: scale(.95); }
 .wx-dow { font-size: .74rem; font-weight: 750; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .wx-day .wx-icon { width: 2.05rem; height: 2.05rem; }
 .wx-hl { font-size: .9rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -231,9 +236,35 @@ svg.ic.big { width: 2.6rem; height: 2.6rem; stroke-width: 1.5; }
   .time .ampm { font-size: 1.15rem; }
   .wx-now > .wx-icon { width: 3.3rem; height: 3.3rem; }
   .wx-temp { font-size: 2.9rem; }
-  .wx-text { max-width: 10.5rem; }
   .weather { gap: .9rem; }
 }
+
+/* weather details pop-up */
+.modal.modal-wx { max-width: 48rem; }
+.wx-daychips { flex: 1; min-width: 0; flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.wx-daychips::-webkit-scrollbar { display: none; }
+.wx-daychips .chip { flex: none; padding: .45rem .8rem; font-size: .88rem; }
+.wx-hero { display: flex; align-items: center; gap: 1rem; }
+.wx-hero > .wx-icon { width: 5rem; height: 5rem; flex: none; }
+.wx-hero-temp { font-size: 3.4rem; font-weight: 300; line-height: 1; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+.wx-hero-temp span { font-size: 1.8rem; color: var(--muted); }
+.wx-hero-cond { font-size: 1.2rem; font-weight: 700; margin-top: .2rem; }
+.wx-hero-sub { font-size: .88rem; color: var(--muted); margin-top: .15rem; }
+.wx-banner { margin: 1rem 0 0; padding: .65rem .85rem; border-radius: 12px; font-weight: 700; color: var(--rain); background: rgba(90, 169, 255, .12); }
+.wx-hours { display: flex; gap: .4rem; overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 1rem 0 0; padding-bottom: .2rem; }
+.wx-hours::-webkit-scrollbar { display: none; }
+.wx-hour { flex: none; width: 3.7rem; display: flex; flex-direction: column; align-items: center; gap: .2rem; padding: .55rem .2rem; border-radius: 14px; background: var(--card-2); }
+.wx-hour > span { display: block; }
+.wx-h-time { font-size: .74rem; font-weight: 700; color: var(--muted); white-space: nowrap; }
+.wx-hour .wx-icon { width: 1.9rem; height: 1.9rem; }
+.wx-h-temp { font-size: .98rem; font-weight: 700; }
+.wx-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr)); gap: .5rem; margin-top: 1rem; }
+.wx-stat { padding: .6rem .8rem; border-radius: 12px; background: var(--card-2); }
+.wx-stat .k { display: block; font-size: .72rem; font-weight: 750; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+.wx-stat .v { display: block; margin-top: .15rem; font-size: 1.15rem; font-weight: 650; }
+.wx-stat small { font-size: .78rem; font-weight: 600; color: var(--muted); margin-left: .35rem; }
+.wx-stat small.line { display: block; margin: .1rem 0 0; font-size: .9rem; }
+.wx-foot { margin: .9rem 0 0; font-size: .78rem; color: var(--faint); }
 
 /* weather icon parts */
 .wx-sun { fill: var(--sun); }
@@ -346,6 +377,13 @@ svg.ic.big { width: 2.6rem; height: 2.6rem; stroke-width: 1.5; }
 .msg.saving { opacity: .55; }
 .chip.on { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
 .msg-compose { margin: 1rem 0 0; }
+.task.saving { opacity: .5; }
+.date-chip {
+  padding: .45rem .75rem; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--card-2); color: var(--text); font: inherit; font-size: .92rem; font-weight: 650;
+}
+.date-chip.on { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+.task-dest { margin: .2rem 0 0; }
 
 /* ───────── lunches ───────── */
 .lunch-week { display: flex; align-items: center; justify-content: space-between; gap: .5rem; font-size: .85rem; color: var(--muted); margin: -.4rem 0 .45rem; flex: none; }

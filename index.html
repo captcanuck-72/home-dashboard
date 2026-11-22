@@ -13,7 +13,7 @@
   <link rel="icon" type="image/png" href="icon-192.png">
   <link rel="manifest" href="manifest.webmanifest">
   <title>Home</title>
-  <link rel="stylesheet" href="styles.css?v=1.3">
+  <link rel="stylesheet" href="styles.css?v=1.5">
 </head>
 <body>
   <main class="dash" id="dash">
@@ -23,7 +23,7 @@
         <div class="date" id="date"></div>
       </div>
 
-      <section class="card weather" id="weather" aria-label="Weather"></section>
+      <section class="card weather" id="weather" aria-label="Weather (tap for details)"></section>
 
       <div class="actions">
         <button class="ai-btn" id="aiBtn" type="button"><span data-icon="sparkle"></span>Ask AI</button>
@@ -45,7 +45,10 @@
     <section class="card tasks" aria-label="Tasks">
       <div class="card-head">
         <h2 class="card-title"><span data-icon="check"></span>Tasks</h2>
-        <span class="card-meta" id="tasksMeta"></span>
+        <div class="card-tools">
+          <span class="card-meta" id="tasksMeta"></span>
+          <button class="mini-btn" id="taskAdd" type="button" aria-label="New task"><span data-icon="plus"></span></button>
+        </div>
       </div>
       <div class="card-body" id="tasksBody"></div>
     </section>
@@ -101,6 +104,6 @@
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <!-- Bump ?v= (and APP_VERSION in app.js) on every release so iPads fetch the new files. -->
-  <script src="app.js?v=1.3"></script>
+  <script src="app.js?v=1.5"></script>
 </body>
 </html>

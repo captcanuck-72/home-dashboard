@@ -103,7 +103,7 @@
 
   // Bump this together with the ?v= numbers in index.html on every release.
   // The dashboard notices a new number on the website and reloads itself.
-  const APP_VERSION = '1.3';
+  const APP_VERSION = '1.5';
 
   const LANG = navigator.language || 'en-US';
   const LOCALE_12H = /[ap]\.?\s?m\.?/i.test(new Date(2020, 0, 1, 13).toLocaleTimeString(LANG));
@@ -169,7 +169,7 @@
 
   /* ──────────────────────────── state ──────────────────────────── */
 
-  const emptyData = () => ({ events: [], tasks: [], taskLists: [], groceries: [], messages: [], messagesSupported: true, lunches: {}, errors: {}, loaded: false });
+  const emptyData = () => ({ events: [], tasks: [], taskLists: [], taskListInfo: [], groceries: [], messages: [], messagesSupported: true, lunches: {}, errors: {}, loaded: false });
   let data = emptyData();
   if (!isDemo()) {
     const cached = load('hd.cache', null);
@@ -219,6 +219,7 @@
     listChoices: () => isDemo()
       ? Promise.resolve(Demo.choices())
       : api('lists').then((r) => ({ calendars: r.calendars || [], taskLists: r.taskLists || [], groceryListId: r.groceryListId || '', messageListId: r.messageListId || '' })),
+    addTask: (t) => isDemo() ? Promise.resolve(Demo.addTask(t)) : api('addTask', Object.assign({ title: t.title, listId: t.listId || '', due: t.due || '' }, choiceParams())),
     completeTask: (t) => isDemo() ? Promise.resolve(Demo.completeTask(t)) : api('completeTask', Object.assign({ listId: t.listId, taskId: t.id }, choiceParams())),
     addGroceries: (items) => isDemo() ? Promise.resolve(Demo.addGroceries(items)) : api('addGrocery', Object.assign({ items: items }, choiceParams())),
     checkGrocery: (id) => isDemo() ? Promise.resolve(Demo.checkGrocery(id)) : api('checkGrocery', Object.assign({ id: id }, choiceParams())),
@@ -299,6 +300,7 @@
         save('hd.demo', st);
       }
       if (!st.messages) { st.messages = demoMessages(); save('hd.demo', st); }
+      if (!st.added) st.added = [];
       return st;
     }
     function demoMessages() {
@@ -313,9 +315,11 @@
     }
     function taskPayload(st) {
       const ids = Array.isArray(S.taskListIds) ? S.taskListIds : TASK_LISTS.filter((l) => l.shownByDefault).map((l) => l.id);
+      const shownLists = TASK_LISTS.filter((l) => ids.indexOf(l.id) >= 0);
       return {
-        lists: TASK_LISTS.filter((l) => ids.indexOf(l.id) >= 0).map((l) => l.name),
-        items: tasks().filter((t) => ids.indexOf(t.listId) >= 0 && st.done.indexOf(t.id) < 0),
+        lists: shownLists.map((l) => l.name),
+        listInfo: shownLists.map((l) => ({ id: l.id, name: l.name, isDefault: l.shownByDefault })),
+        items: tasks().concat(st.added).filter((t) => ids.indexOf(t.listId) >= 0 && st.done.indexOf(t.id) < 0),
       };
     }
     return {
@@ -334,6 +338,13 @@
         };
       },
       completeTask(t) { const st = state(); st.done.push(t.id); save('hd.demo', st); return { tasks: taskPayload(st) }; },
+      addTask(t) {
+        const st = state();
+        const list = TASK_LISTS.filter((l) => l.id === t.listId)[0] || TASK_LISTS.filter((l) => l.shownByDefault)[0];
+        st.added.push({ id: 'ta' + (++st.seq), listId: list.id, list: list.name, title: t.title, due: t.due || null });
+        save('hd.demo', st);
+        return { tasks: taskPayload(st) };
+      },
       addGroceries(items) {
         const st = state();
         items.slice().reverse().forEach((title) => st.groceries.unshift({ id: 'g' + (++st.seq), title: title }));
@@ -366,15 +377,31 @@
       },
       weather() {
         const f = S.units === 'F';
-        const T = (c) => f ? c * 9 / 5 + 32 : c;
+        const T = (c) => (f ? c * 9 / 5 + 32 : c);
+        const W = (k) => (f ? k * 0.621 : k);
+        const at = (date, h, m) => { const x = new Date(date); x.setHours(h, m, 0, 0); return x; };
+        // [code, high, low, chance %, precipitation mm, UV, max wind km/h, wind direction°]
+        const days = [[2, 6, -1, 10, 0, 2, 14, 290], [61, 8, 3, 80, 6, 1, 22, 200], [3, 5, 0, 20, 0, 1, 12, 250],
+          [71, 1, -4, 70, 4, 1, 18, 20], [0, 2, -6, 0, 0, 2, 9, 310], [1, 4, -3, 5, 0, 2, 11, 270], [80, 7, 1, 55, 3, 1, 25, 180]];
+        const daily = days.map((d, i) => {
+          const date = addDays(today0(), i);
+          return { date: date, code: d[0], max: T(d[1]), min: T(d[2]), pp: d[3], precipSum: f ? d[4] / 25.4 : d[4], uv: d[5],
+            windMax: W(d[6]), windDir: d[7], sunrise: at(date, 7, 18), sunset: at(date, 16, 37) };
+        });
+        const hourly = [];
+        for (let i = 0; i < 7 * 24; i++) {
+          const time = new Date(today0().getTime() + i * 36e5), hr = time.getHours(), d = daily[Math.floor(i / 24)];
+          const warm = (1 - Math.cos(((hr - 5) / 24) * 2 * Math.PI)) / 2; // coldest ~5 AM, warmest ~5 PM
+          const pp = hr >= 12 && hr <= 20 ? d.pp : Math.round(d.pp / 3);
+          hourly.push({ time: time, temp: d.min + (d.max - d.min) * warm, pp: pp, code: pp >= 50 ? d.code : (d.code >= 51 ? 3 : d.code), isDay: hr >= 7 && hr < 17 });
+        }
         const h = new Date().getHours();
-        const days = [[2, 6, -1, 10], [61, 8, 3, 80], [3, 5, 0, 20], [71, 1, -4, 70], [0, 2, -6, 0], [1, 4, -3, 5], [80, 7, 1, 55]];
         return {
           sample: true,
           units: S.units,
-          current: { temp: T(4), feels: T(1), code: 2, isDay: h >= 7 && h < 17, wind: f ? 9 : 14 },
-          daily: days.map((d, i) => ({ date: addDays(today0(), i), code: d[0], max: T(d[1]), min: T(d[2]), pp: d[3] })),
-          hourly: [],
+          current: { temp: T(4), feels: T(1), code: 2, isDay: h >= 7 && h < 17, wind: W(14), gust: W(31), windDir: 290, humidity: 72, precip: 0 },
+          daily: daily,
+          hourly: hourly,
         };
       },
     };
@@ -441,7 +468,7 @@
       data.events = res.calendar.events || [];
       if (res.calendar.errors && res.calendar.errors.length) errors.calendar = res.calendar.errors.join(' · ');
     }
-    if (res.tasks) { data.tasks = res.tasks.items || []; data.taskLists = res.tasks.lists || []; }
+    if (res.tasks) applyTaskPayload(res.tasks);
     if (res.groceries) data.groceries = res.groceries;
     if (res.messages) data.messages = res.messages;
     // An Apps Script from before Messages existed sends no 'messages' at all.
@@ -521,16 +548,26 @@
 
   function normalizeWeather(j, units) {
     const c = j.current, d = j.daily, h = j.hourly;
+    const at = (arr, i) => (arr ? arr[i] : undefined);
     return {
       units: units,
-      current: { temp: c.temperature_2m, feels: c.apparent_temperature, code: c.weather_code, isDay: !!c.is_day, wind: c.wind_speed_10m },
+      current: {
+        temp: c.temperature_2m, feels: c.apparent_temperature, code: c.weather_code, isDay: !!c.is_day,
+        wind: c.wind_speed_10m, gust: c.wind_gusts_10m, windDir: c.wind_direction_10m, humidity: c.relative_humidity_2m, precip: c.precipitation,
+      },
       daily: d.time.map((t, i) => ({
         date: parseYmd(t), code: d.weather_code[i], max: d.temperature_2m_max[i], min: d.temperature_2m_min[i],
-        pp: d.precipitation_probability_max[i], sunrise: parseLocal(d.sunrise[i]), sunset: parseLocal(d.sunset[i]),
+        pp: at(d.precipitation_probability_max, i), precipSum: at(d.precipitation_sum, i), uv: at(d.uv_index_max, i),
+        windMax: at(d.wind_speed_10m_max, i), windDir: at(d.wind_direction_10m_dominant, i),
+        sunrise: d.sunrise ? parseLocal(d.sunrise[i]) : null, sunset: d.sunset ? parseLocal(d.sunset[i]) : null,
       })),
-      hourly: h.time.map((t, i) => ({ time: parseLocal(t), pp: h.precipitation_probability[i], code: h.weather_code[i] })),
+      hourly: h.time.map((t, i) => ({
+        time: parseLocal(t), temp: at(h.temperature_2m, i), pp: at(h.precipitation_probability, i), code: at(h.weather_code, i), isDay: at(h.is_day, i),
+      })),
     };
   }
+
+  const WEATHER_CACHE = 'hd.weather2'; // v2 holds the extra detail fields
 
   function refreshWeather() {
     if (S.lat == null || S.lon == null) {
@@ -542,41 +579,42 @@
     }
     const units = S.units;
     const url = 'https://api.open-meteo.com/v1/forecast?latitude=' + S.lat + '&longitude=' + S.lon +
-      '&current=temperature_2m,apparent_temperature,is_day,weather_code,wind_speed_10m' +
-      '&hourly=precipitation_probability,weather_code' +
-      '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset' +
+      '&current=temperature_2m,apparent_temperature,relative_humidity_2m,is_day,precipitation,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m' +
+      '&hourly=temperature_2m,precipitation_probability,weather_code,is_day' +
+      '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum,uv_index_max,wind_speed_10m_max,wind_direction_10m_dominant,sunrise,sunset' +
       '&timezone=auto&forecast_days=7' +
-      (units === 'F' ? '&temperature_unit=fahrenheit&wind_speed_unit=mph' : '&wind_speed_unit=kmh');
+      (units === 'F' ? '&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch' : '&wind_speed_unit=kmh');
     return fetchJSON(url, null, 15000)
       .then((j) => {
         weather = normalizeWeather(j, units);
         weather.at = Date.now();
         weatherErr = '';
-        save('hd.weather', { raw: j, units: units, lat: S.lat, lon: S.lon, at: weather.at });
+        save(WEATHER_CACHE, { raw: j, units: units, lat: S.lat, lon: S.lon, at: weather.at });
       })
       .catch((err) => { weatherErr = 'Weather unavailable (' + err.message + ')'; console.warn(err); })
       .then(renderWeather);
   }
 
   function loadCachedWeather() {
-    const c = load('hd.weather', null);
+    const c = load(WEATHER_CACHE, null);
     if (!c || c.lat !== S.lat || c.lon !== S.lon || c.units !== S.units || Date.now() - c.at > 6 * 36e5) return null;
     try { const w = normalizeWeather(c.raw, c.units); w.at = c.at; return w; } catch (e) { return null; }
   }
 
-  function precipNote(w) {
+  // Rain/snow likely (≥50%) in the next 12 hours → { what, now, time }
+  function precipSoon(w) {
     const now = Date.now();
-    const next = w.hourly.filter((h) => h.time.getTime() > now - 36e5).slice(0, 12);
+    const next = (w.hourly || []).filter((h) => h.time.getTime() > now - 36e5).slice(0, 12);
     for (let i = 0; i < next.length; i++) {
       if (next[i].pp >= 50) {
         const k = wxKind(next[i].code);
-        const what = k === 'snow' ? 'Snow' : k === 'storm' ? 'Storms' : 'Rain';
-        return i === 0 ? what + ' likely now' : what + ' likely around ' + fmtHour(next[i].time);
+        return { what: k === 'snow' ? 'Snow' : k === 'storm' ? 'Storms' : 'Rain', now: i === 0, time: next[i].time };
       }
     }
-    return '';
+    return null;
   }
 
+  // The card: just the icon, temperature and "feels like" (tap for everything else).
   function renderWeather() {
     const el = $('#weather');
     const w = weather;
@@ -584,46 +622,103 @@
       setHTML(el, '<div class="wx-empty">' + esc(weatherErr || 'Loading weather…') + '</div>');
       return;
     }
-    const c = w.current;
-    const d0 = w.daily[0] || {};
-    const r = Math.round;
-    const now = new Date();
-    let line2 = 'H <b>' + r(d0.max) + '°</b> · L <b>' + r(d0.min) + '°</b> · Feels ' + r(c.feels) + '°';
-    let line3, alert = false;
-    if (w.sample) {
-      line3 = 'Sample — set your city in Settings';
-    } else {
-      const note = precipNote(w);
-      if (note) { line3 = note; alert = true; }
-      else {
-        line3 = 'Wind ' + r(c.wind) + ' ' + (w.units === 'F' ? 'mph' : 'km/h');
-        const d1 = w.daily[1];
-        if (d0.sunrise && now < d0.sunrise) line3 += ' · Sunrise ' + fmtTimeStr(d0.sunrise);
-        else if (d0.sunset && now < d0.sunset) line3 += ' · Sunset ' + fmtTimeStr(d0.sunset);
-        else if (d1 && d1.sunrise) line3 += ' · Sunrise ' + fmtTimeStr(d1.sunrise);
-      }
-    }
-    if (weatherErr) { line3 = weatherErr; alert = true; }
-    const place = S.place ? '<span class="wx-place">' + esc(S.place.split(',')[0]) + '</span>' : '';
-    const days = w.daily.slice(1, 7).map((d) =>
-      '<div class="wx-day">' +
-        '<div class="wx-dow">' + DOW[d.date.getDay()] + '</div>' +
-        '<div class="wx-icon">' + wxIcon(d.code, true) + '</div>' +
-        '<div class="wx-hl"><b>' + r(d.max) + '°</b><span>' + r(d.min) + '°</span></div>' +
-        '<div class="wx-pp">' + (d.pp >= 20 ? d.pp + '%' : '') + '</div>' +
-      '</div>').join('');
+    const c = w.current, r = Math.round;
+    const soon = w.sample ? null : precipSoon(w);
+    const tag = weatherErr ? '<span class="wx-tag bad">Offline</span>'
+      : soon ? '<span class="wx-tag">' + esc(soon.what + (soon.now ? ' now' : ' ~' + fmtHour(soon.time))) + '</span>'
+      : w.sample ? '<span class="wx-tag muted">Sample</span>' : '';
+    const days = w.daily.slice(1, 7).map((d, i) =>
+      '<button type="button" class="wx-day" data-wx="' + (i + 1) + '" aria-label="' + DOW_LONG[d.date.getDay()] + ' weather">' +
+        '<span class="wx-dow">' + DOW[d.date.getDay()] + '</span>' +
+        '<span class="wx-icon">' + wxIcon(d.code, true) + '</span>' +
+        '<span class="wx-hl"><b>' + r(d.max) + '°</b><span>' + r(d.min) + '°</span></span>' +
+        '<span class="wx-pp">' + (d.pp >= 20 ? d.pp + '%' : '') + '</span>' +
+      '</button>').join('');
     setHTML(el,
-      '<div class="wx-now">' +
-        '<div class="wx-icon">' + wxIcon(c.code, c.isDay) + '</div>' +
-        '<div class="wx-temp">' + r(c.temp) + '°</div>' +
-        '<div class="wx-text">' +
-          '<div class="wx-desc">' + esc(WMO[c.code] || '') + place + '</div>' +
-          '<div class="wx-sub">' + line2 + '</div>' +
-          '<div class="wx-sub' + (alert ? ' alert' : '') + '">' + esc(line3) + '</div>' +
-        '</div>' +
-      '</div>' +
+      '<button type="button" class="wx-now" data-wx="0" aria-label="Today’s weather details">' +
+        '<span class="wx-icon">' + wxIcon(c.code, c.isDay) + '</span>' +
+        '<span class="wx-temp">' + r(c.temp) + '°</span>' +
+        '<span class="wx-text"><span class="wx-feels">Feels ' + r(c.feels) + '°</span>' + tag + '</span>' +
+      '</button>' +
       '<div class="wx-days">' + days + '</div>');
     fitForecast();
+  }
+
+  // ── the details pop-up ──
+  const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+  const isNum = (v) => typeof v === 'number' && !isNaN(v);
+  const compass = (deg) => (isNum(deg) ? COMPASS[Math.round(deg / 45) % 8] : '');
+  const uvLabel = (uv) => (uv < 3 ? 'Low' : uv < 6 ? 'Moderate' : uv < 8 ? 'High' : uv < 11 ? 'Very high' : 'Extreme');
+  function fmtPrecip(v, units) {
+    if (!(v > 0)) return 'None';
+    return units === 'F' ? (v < 0.01 ? '< 0.01' : v.toFixed(2)) + ' in' : (v < 0.1 ? '< 0.1' : v.toFixed(1)) + ' mm';
+  }
+
+  function weatherDetailHTML(i) {
+    const w = weather, d = w.daily[i], c = w.current, r = Math.round, today = i === 0;
+    const windUnit = w.units === 'F' ? 'mph' : 'km/h';
+    const name = i === 0 ? 'Today' : i === 1 ? 'Tomorrow' : DOW_LONG[d.date.getDay()];
+    const when = MON_LONG[d.date.getMonth()] + ' ' + d.date.getDate();
+    const code = today ? c.code : d.code;
+    let html = '<div class="wx-hero"><span class="wx-icon">' + wxIcon(code, today ? c.isDay : true) + '</span><div>' +
+      '<div class="wx-hero-temp">' + (today ? r(c.temp) + '°' : r(d.max) + '°<span> / ' + r(d.min) + '°</span>') + '</div>' +
+      '<div class="wx-hero-cond">' + esc(WMO[code] || '') + '</div>' +
+      '<div class="wx-hero-sub">' + esc([name + ', ' + when, S.place ? S.place.split(',')[0] : ''].filter(Boolean).join(' · ')) + '</div>' +
+      '</div></div>';
+
+    if (today && !w.sample) {
+      const soon = precipSoon(w);
+      if (soon) html += '<div class="wx-banner">' + esc(soon.what + ' likely ' + (soon.now ? 'now' : 'around ' + fmtHour(soon.time))) + '</div>';
+    }
+
+    const now = Date.now();
+    const hours = today
+      ? (w.hourly || []).filter((h) => h.time.getTime() > now - 36e5).slice(0, 12)
+      : (w.hourly || []).filter((h) => ymd(h.time) === ymd(d.date) && h.time.getHours() % 3 === 0);
+    if (hours.some((h) => isNum(h.temp))) {
+      html += '<div class="wx-hours">' + hours.map((h, k) => {
+        const day = h.isDay == null ? h.time.getHours() >= 7 && h.time.getHours() < 18 : !!h.isDay;
+        return '<div class="wx-hour"><span class="wx-h-time">' + (today && k === 0 ? 'Now' : esc(fmtHour(h.time))) + '</span>' +
+          '<span class="wx-icon">' + wxIcon(h.code, day) + '</span>' +
+          '<span class="wx-h-temp">' + (isNum(h.temp) ? r(h.temp) + '°' : '') + '</span>' +
+          '<span class="wx-pp">' + (h.pp >= 10 ? h.pp + '%' : '') + '</span></div>';
+      }).join('') + '</div>';
+    }
+
+    const stats = [];
+    const add = (k, v) => { if (v) stats.push('<div class="wx-stat"><span class="k">' + k + '</span><span class="v">' + v + '</span></div>'); };
+    if (today) add('Feels like', isNum(c.feels) ? r(c.feels) + '°' : '');
+    add('High / Low', r(d.max) + '° / ' + r(d.min) + '°');
+    add('Chance of ' + (wxKind(d.code) === 'snow' ? 'snow' : 'rain'), isNum(d.pp) ? d.pp + '%' : '');
+    add('Precipitation', isNum(d.precipSum) ? fmtPrecip(d.precipSum, w.units) : '');
+    if (today) add('Wind', isNum(c.wind) ? r(c.wind) + ' ' + windUnit + ' ' + compass(c.windDir) + (isNum(c.gust) && c.gust >= c.wind + 8 ? '<small class="line">gusts ' + r(c.gust) + ' ' + windUnit + '</small>' : '') : '');
+    else add('Wind', isNum(d.windMax) ? 'up to ' + r(d.windMax) + ' ' + windUnit + ' ' + compass(d.windDir) : '');
+    if (today) add('Humidity', isNum(c.humidity) ? r(c.humidity) + '%' : '');
+    add('UV index', isNum(d.uv) ? r(d.uv) + '<small>' + uvLabel(d.uv) + '</small>' : '');
+    if (d.sunrise && d.sunset) add('Sunrise / Sunset', esc(fmtTimeStr(d.sunrise)) + '<small class="line">' + esc(fmtTimeStr(d.sunset)) + '</small>');
+    html += '<div class="wx-stats">' + stats.join('') + '</div>';
+    html += '<p class="wx-foot">' + (w.sample
+      ? 'Sample weather. Set your town in Settings → Weather.'
+      : 'Updated ' + esc(fmtTimeStr(new Date(w.at))) + ' · Open-Meteo' + (weatherErr ? ' · ' + esc(weatherErr) : '')) + '</p>';
+    return html;
+  }
+
+  function openWeatherDetail(i) {
+    if (!weather || !weather.daily || !weather.daily.length) return;
+    const n = Math.min(7, weather.daily.length);
+    let chips = '';
+    for (let k = 0; k < n; k++) chips += '<button type="button" class="chip" data-day="' + k + '">' + (k === 0 ? 'Today' : DOW[weather.daily[k].date.getDay()]) + '</button>';
+    const m = openModal(
+      '<div class="modal-head"><div class="chips wx-daychips">' + chips + '</div>' +
+      '<button class="icon-btn" type="button" data-close aria-label="Close">' + icon('close') + '</button></div>' +
+      '<div id="wxDetail"></div>',
+      { cls: 'modal-wx' });
+    const show = (k) => {
+      $('#wxDetail', m).innerHTML = weatherDetailHTML(k);
+      $$('[data-day]', m).forEach((b) => b.classList.toggle('on', +b.getAttribute('data-day') === k));
+    };
+    m.addEventListener('click', (e) => { const b = e.target.closest('[data-day]'); if (b) show(+b.getAttribute('data-day')); });
+    show(Math.max(0, Math.min(n - 1, i || 0)));
   }
 
   // Show as many forecast days as fit (narrow iPads get fewer).
@@ -756,7 +851,7 @@
         const sub = [];
         if (di) sub.push('<span class="due">' + esc(di.label) + '</span>');
         if (multi && t.list) sub.push(esc(t.list));
-        return '<li class="task' + (di && di.cls ? ' ' + di.cls : '') + (pending.t[t.id] ? ' done' : '') + '" data-tid="' + esc(t.id) + '">' +
+        return '<li class="task' + (di && di.cls ? ' ' + di.cls : '') + (pending.t[t.id] ? ' done' : '') + (t.saving ? ' saving' : '') + '" data-tid="' + esc(t.id) + '">' +
           '<span class="check">' + icon('tick') + '</span>' +
           '<span class="task-main"><span class="task-title">' + esc(t.title) + '</span>' +
           (sub.length ? '<span class="task-sub">' + sub.join(' · ') + '</span>' : '') + '</span></li>';
@@ -772,16 +867,102 @@
     render();
   }
 
+  function applyTaskPayload(tp) {
+    data.tasks = tp.items || [];
+    data.taskLists = tp.lists || [];
+    data.taskListInfo = tp.listInfo || []; // older Apps Scripts don't send this
+  }
+
   function onTaskTap(id) {
+    if (id.indexOf('tmp') === 0) return;
     const t = (data.tasks || []).filter((x) => x.id === id)[0];
     if (!t) return;
     toggleDone('t', id, () => {
       data.tasks = data.tasks.filter((x) => x.id !== id);
       renderTasks();
       Backend.completeTask(t)
-        .then((res) => { if (res && res.tasks) { data.tasks = res.tasks.items || []; data.taskLists = res.tasks.lists || []; renderTasks(); } })
+        .then((res) => { if (res && res.tasks) { applyTaskPayload(res.tasks); renderTasks(); } })
         .catch((err) => { data.tasks.push(t); renderTasks(); toast('Couldn’t complete task — ' + err.message, 5000); });
     }, renderTasks);
+  }
+
+  // Lists a new task can go into: the lists shown in the Tasks card.
+  function taskListOptions() {
+    if (data.taskListInfo && data.taskListInfo.length) return data.taskListInfo;
+    const seen = {}, out = []; // older Apps Script: work them out from the tasks themselves
+    (data.tasks || []).forEach((t) => { if (t.listId && !seen[t.listId] && t.listId.indexOf('tmp') !== 0) { seen[t.listId] = 1; out.push({ id: t.listId, name: t.list }); } });
+    return out;
+  }
+
+  function addTaskText(title, listId, due) {
+    const list = (taskListOptions().filter((l) => l.id === listId)[0] || {}).name || '';
+    const temp = { id: 'tmp' + Date.now(), listId: 'tmp', list: list, title: title, due: due || null, saving: true };
+    data.tasks = (data.tasks || []).concat([temp]);
+    renderTasks();
+    Backend.addTask({ title: title, listId: listId, due: due })
+      .then((res) => {
+        if (res && res.tasks) applyTaskPayload(res.tasks); else temp.saving = false;
+        renderTasks();
+        toast('Task added' + (list ? ' to ' + list : ''));
+      })
+      .catch((err) => {
+        data.tasks = data.tasks.filter((x) => x !== temp);
+        renderTasks();
+        toast(/Unknown action/.test(err.message)
+          ? 'To add tasks here, paste the newest Code.gs into Apps Script and deploy a new version (see README).'
+          : 'Couldn’t add task — ' + err.message, 6000);
+      });
+  }
+
+  function openTaskComposer() {
+    const lists = taskListOptions();
+    const last = load('hd.lastTaskList', '');
+    // last list used here, else the default list (Family), else the first one shown
+    let listId = (lists.filter((l) => l.id === last)[0] || lists.filter((l) => l.isDefault)[0] || lists[0] || {}).id || '';
+    let due = '';
+    const chip = (attr, value, label, on) => '<button type="button" class="chip' + (on ? ' on' : '') + '" ' + attr + '="' + esc(value) + '">' + esc(label) + '</button>';
+    const m = openModal(
+      '<div class="modal-head"><h2>New task</h2><button class="icon-btn" type="button" data-close aria-label="Close">' + icon('close') + '</button></div>' +
+      '<form class="ask-row" data-task><input type="text" id="taskText" placeholder="What needs doing?" maxlength="300" autocomplete="off">' +
+      '<button type="button" class="round-btn mic" id="taskMic" aria-label="Say the task">' + icon('mic') + '</button></form>' +
+      (lists.length > 1
+        ? '<div class="chips-label">List</div><div class="chips">' + lists.map((l) => chip('data-list', l.id, l.name, l.id === listId)).join('') + '</div>'
+        : '<p class="hint task-dest">' + (lists.length ? 'Adds to <b>' + esc(lists[0].name) + '</b>.' : 'Adds to your first task list.') + '</p>') +
+      '<div class="chips-label">Due</div><div class="chips">' +
+        chip('data-due', '', 'No date', true) + chip('data-due', 'today', 'Today') + chip('data-due', 'tomorrow', 'Tomorrow') +
+        '<input type="date" id="taskDue" class="date-chip" aria-label="Pick a due date"></div>' +
+      '<div class="modal-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn primary" type="button" data-add>Add task</button></div>',
+      { cls: 'modal-task' });
+    const input = $('#taskText', m), dateBox = $('#taskDue', m);
+    const send = () => {
+      const title = input.value.trim();
+      if (!title) { input.focus(); return; }
+      if (listId) save('hd.lastTaskList', listId);
+      const when = due === 'today' ? ymd(new Date()) : due === 'tomorrow' ? ymd(addDays(new Date(), 1)) : due;
+      closeModal();
+      addTaskText(title, listId, when);
+    };
+    m.addEventListener('click', (e) => {
+      const l = e.target.closest('[data-list]');
+      if (l) { listId = l.getAttribute('data-list'); $$('[data-list]', m).forEach((c) => c.classList.toggle('on', c === l)); return; }
+      const d = e.target.closest('[data-due]');
+      if (d) {
+        due = d.getAttribute('data-due');
+        dateBox.value = '';
+        dateBox.classList.remove('on');
+        $$('[data-due]', m).forEach((c) => c.classList.toggle('on', c === d));
+        return;
+      }
+      if (e.target.closest('[data-add]')) send();
+    });
+    dateBox.addEventListener('change', () => {
+      due = dateBox.value || '';
+      dateBox.classList.toggle('on', !!due);
+      $$('[data-due]', m).forEach((c) => c.classList.toggle('on', !due && c.getAttribute('data-due') === ''));
+    });
+    $('[data-task]', m).addEventListener('submit', (e) => { e.preventDefault(); send(); });
+    $('#taskMic', m).addEventListener('click', () => dictate(input, $('#taskMic', m), () => {}));
+    input.focus();
   }
 
   /* ──────────────────────────── groceries ──────────────────────────── */
@@ -1197,7 +1378,11 @@
   function openModal(html, opts) {
     opts = opts || {};
     if (modalOpen) closeModal();
-    const m = $('#modal');
+    // A fresh element each time, so click handlers from earlier dialogs can't fire again
+    // (they would re-send an old task, re-save an old lunch week, or open two AI windows).
+    const old = $('#modal');
+    const m = old.cloneNode(false);
+    old.parentNode.replaceChild(m, old);
     m.className = 'modal' + (opts.cls ? ' ' + opts.cls : '');
     m.innerHTML = html;
     m.scrollTop = 0;
@@ -1650,6 +1835,11 @@
     });
 
     $('#msgAdd').addEventListener('click', openMessageComposer);
+    $('#weather').addEventListener('click', (e) => {
+      const t = e.target.closest('[data-wx]');
+      openWeatherDetail(t ? +t.getAttribute('data-wx') : 0);
+    });
+    $('#taskAdd').addEventListener('click', openTaskComposer);
     $('#msgBody').addEventListener('click', (e) => {
       const li = e.target.closest('[data-mid]');
       if (li) onMessageTap(li.getAttribute('data-mid'));

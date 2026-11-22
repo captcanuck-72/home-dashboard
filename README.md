@@ -2,9 +2,9 @@
 
 A full-screen family dashboard for an iPad on the wall or kitchen counter:
 
-- **Clock & weather**: current conditions, a rain/snow heads-up for the next 12 hours, and a multi-day forecast (Open-Meteo, free, no account)
+- **Clock & weather**: the current temperature and "feels like", a rain/snow heads-up for the next 12 hours, and a multi-day forecast. Tap the weather for the full day (hour by hour, high/low, chance and amount of rain or snow, wind and gusts, humidity, UV, sunrise and sunset), or tap a forecast day for that day (Open-Meteo, free, no account)
 - **Calendar**: events merged from all your Google Calendars, colour-coded, with the current event highlighted
-- **Tasks**: the Google Tasks lists you choose (just **Family** by default), sorted by due date; tap to check one off (tap again within 2½ seconds to undo)
+- **Tasks**: the Google Tasks lists you choose (just **Family** by default), sorted by due date. Tap **+** to add one (type or say it, pick the list and an optional due date), and tap a task to check it off (tap again within 2½ seconds to undo)
 - **Groceries**: type or tap the mic to add items ("milk, eggs and bread" becomes three items). The list lives in Google Tasks (the **Groceries** list unless you pick another in Settings), so it is also on your phone in the Google Tasks app at the store.
 - **Ask AI**: one tap opens Claude, ChatGPT, Gemini or Perplexity, optionally with your question already filled in
 - **Messages**: a family message board kept in a Google Tasks list called **Messages**. Post from your phone or tap **+** on the iPad, address a message to someone so it gets their coloured name tag, and tap it to clear it.
@@ -43,7 +43,7 @@ Do this on a computer, signed in to the Google account that owns your calendars.
 - To add a school or team calendar that has an iCal link, use **Other calendars ➕ → From URL**.
 - To rename calendars, or to keep one off the dashboard entirely (it won't even get a checkbox), edit `CONFIG` at the top of `Code.gs`.
 
-**Which task lists show up?** ⚙️ **Settings → Tasks** has a checkbox for every Google Tasks list. Until you pick, the Tasks card shows only the list called **Family**, or every list if you don't have one called that. **Use default** switches back. The default list names are set by `DEFAULT_TASK_LISTS` in `Code.gs`.
+**Which task lists show up?** ⚙️ **Settings → Tasks** has a checkbox for every Google Tasks list. New tasks added with **+** can go into any of the lists shown, starting with Family; the dashboard remembers the list you used last. Until you pick, the Tasks card shows only the list called **Family**, or every list if you don't have one called that. **Use default** switches back. The default list names are set by `DEFAULT_TASK_LISTS` in `Code.gs`.
 
 **Which list holds the groceries?** ⚙️ **Settings → Groceries** lets you choose any Google Tasks list. Until you pick, it's the list called **Groceries**, which `setup` creates if needed. Items added on the iPad go into that list, and checking them off on the iPad or in the Google Tasks app updates both. The grocery list never appears in the Tasks card, so it isn't shown twice.
 
@@ -123,4 +123,5 @@ The Messages card shows the open tasks in a Google Tasks list called **Messages*
 | Tasks card is missing some lists | By default it shows only **Family**. Tick more lists in ⚙️ Settings → Tasks. |
 | Settings looks different from this guide | The iPad is running an older copy: tap ⚙️ → **Reload dashboard**, and check the version at the bottom of Settings. |
 | Weather says "Sample" | Set your town in Settings → Weather. |
+| Adding a task says to update the Apps Script | Paste the newest `Code.gs` and deploy a new version (see "Updating `Code.gs` later"). |
 | Messages card says to update the Apps Script | Paste the newest `Code.gs` and deploy a new version (see "Updating `Code.gs` later"). |
