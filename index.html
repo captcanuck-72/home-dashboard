@@ -13,7 +13,7 @@
   <link rel="icon" type="image/png" href="icon-192.png">
   <link rel="manifest" href="manifest.webmanifest">
   <title>Home</title>
-  <link rel="stylesheet" href="styles.css?v=1.2">
+  <link rel="stylesheet" href="styles.css?v=1.3">
 </head>
 <body>
   <main class="dash" id="dash">
@@ -63,12 +63,14 @@
       <div class="card-body" id="groceryBody"></div>
     </section>
 
-    <section class="card cam" aria-label="Front door camera">
+    <section class="card msg-card" aria-label="Messages">
       <div class="card-head">
-        <h2 class="card-title"><span data-icon="video"></span>Front door</h2>
-        <div class="card-tools" id="camTools"></div>
+        <h2 class="card-title"><span data-icon="message"></span><span id="msgTitle">Messages</span></h2>
+        <div class="card-tools">
+          <button class="mini-btn" id="msgAdd" type="button" aria-label="New message"><span data-icon="plus"></span></button>
+        </div>
       </div>
-      <div class="cam-view" id="camBody"></div>
+      <div class="card-body" id="msgBody"></div>
     </section>
 
     <section class="card lunch" aria-label="School lunches">
@@ -99,6 +101,6 @@
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <!-- Bump ?v= (and APP_VERSION in app.js) on every release so iPads fetch the new files. -->
-  <script src="app.js?v=1.2"></script>
+  <script src="app.js?v=1.3"></script>
 </body>
 </html>

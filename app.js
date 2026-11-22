@@ -93,6 +93,7 @@
     pin: '<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/>',
     tick: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
     play: '<path d="M7 4.5v15l12-7.5z"/>',
+    message: '<path d="M21 14.5a2 2 0 0 1-2 2H8l-4.5 4V5.5a2 2 0 0 1 2-2H19a2 2 0 0 1 2 2z"/>',
     alert: '<circle cx="12" cy="12" r="9.5"/><path d="M12 7.5v5.5M12 16.5v.01"/>',
   };
   const icon = (name, cls) =>
@@ -102,7 +103,7 @@
 
   // Bump this together with the ?v= numbers in index.html on every release.
   // The dashboard notices a new number on the website and reloads itself.
-  const APP_VERSION = '1.2';
+  const APP_VERSION = '1.3';
 
   const LANG = navigator.language || 'en-US';
   const LOCALE_12H = /[ap]\.?\s?m\.?/i.test(new Date(2020, 0, 1, 13).toLocaleTimeString(LANG));
@@ -130,12 +131,9 @@
     nightMode: true,
     nightStart: '22:00',
     nightEnd: '06:00',
-    camMode: 'none',
-    camUrl: '',
-    camRefresh: 10,
-    camTapToPlay: false,
-    camLink: '',
-    camLinkLabel: '',
+    msgTitle: 'Messages',
+    msgNames: '',      // e.g. "Sam, Alex": the "For" buttons and coloured name tags on messages
+    messageListId: '', // '' = the Google Tasks list called "Messages"; or the list ID picked in Settings
     aiLinks: DEFAULT_AI,
   };
 
@@ -171,7 +169,7 @@
 
   /* ──────────────────────────── state ──────────────────────────── */
 
-  const emptyData = () => ({ events: [], tasks: [], taskLists: [], groceries: [], lunches: {}, errors: {}, loaded: false });
+  const emptyData = () => ({ events: [], tasks: [], taskLists: [], groceries: [], messages: [], messagesSupported: true, lunches: {}, errors: {}, loaded: false });
   let data = emptyData();
   if (!isDemo()) {
     const cached = load('hd.cache', null);
@@ -211,6 +209,7 @@
     if (Array.isArray(S.calendarIds)) p.calendars = S.calendarIds;
     if (Array.isArray(S.taskListIds)) p.taskLists = S.taskListIds;
     if (S.groceryListId) p.groceryList = S.groceryListId;
+    if (S.messageListId) p.messageList = S.messageListId;
     return p;
   }
 
@@ -219,11 +218,13 @@
     // Everything Settings can choose from: { calendars, taskLists, groceryListId }
     listChoices: () => isDemo()
       ? Promise.resolve(Demo.choices())
-      : api('lists').then((r) => ({ calendars: r.calendars || [], taskLists: r.taskLists || [], groceryListId: r.groceryListId || '' })),
+      : api('lists').then((r) => ({ calendars: r.calendars || [], taskLists: r.taskLists || [], groceryListId: r.groceryListId || '', messageListId: r.messageListId || '' })),
     completeTask: (t) => isDemo() ? Promise.resolve(Demo.completeTask(t)) : api('completeTask', Object.assign({ listId: t.listId, taskId: t.id }, choiceParams())),
     addGroceries: (items) => isDemo() ? Promise.resolve(Demo.addGroceries(items)) : api('addGrocery', Object.assign({ items: items }, choiceParams())),
     checkGrocery: (id) => isDemo() ? Promise.resolve(Demo.checkGrocery(id)) : api('checkGrocery', Object.assign({ id: id }, choiceParams())),
     setLunches: (map) => isDemo() ? Promise.resolve(Demo.setLunches(map)) : api('setLunches', { lunches: map }),
+    addMessage: (text) => isDemo() ? Promise.resolve(Demo.addMessage(text)) : api('addMessage', Object.assign({ text: text }, choiceParams())),
+    doneMessage: (id) => isDemo() ? Promise.resolve(Demo.doneMessage(id)) : api('doneMessage', Object.assign({ id: id }, choiceParams())),
   };
 
   /* ──────────────────────────── demo data ──────────────────────────── */
@@ -282,6 +283,7 @@
       { id: 'l1', name: 'My Tasks', shownByDefault: false },
       { id: 'l2', name: 'Family', shownByDefault: true },
       { id: 'lg', name: 'Groceries', shownByDefault: false },
+      { id: 'lm', name: 'Messages', shownByDefault: false },
     ];
     function state() {
       let st = load('hd.demo', null);
@@ -296,7 +298,18 @@
         };
         save('hd.demo', st);
       }
+      if (!st.messages) { st.messages = demoMessages(); save('hd.demo', st); }
       return st;
+    }
+    function demoMessages() {
+      const names = msgNames(); // with no names set in Settings, the samples aren't addressed to anyone
+      const to = (i) => (names[i] ? names[i] + ': ' : '');
+      const ago = (mins) => new Date(Date.now() - mins * 6e4).toISOString();
+      return [
+        { id: 'm1', text: to(0) + 'Piano practice before screen time, please', updated: ago(25) },
+        { id: 'm2', text: to(1) + 'Library books are on the bench. Take them to school!', due: ymd(today0()), updated: ago(140) },
+        { id: 'm3', text: 'Pizza and movie night on Friday', notes: 'Vote for the movie at dinner', updated: ago(26 * 60) },
+      ];
     }
     function taskPayload(st) {
       const ids = Array.isArray(S.taskListIds) ? S.taskListIds : TASK_LISTS.filter((l) => l.shownByDefault).map((l) => l.id);
@@ -308,7 +321,7 @@
     return {
       loadAll() {
         const st = state();
-        return { calendar: { events: events().filter(shown) }, tasks: taskPayload(st), groceries: st.groceries.slice(), lunches: Object.assign({}, st.lunches), errors: {} };
+        return { calendar: { events: events().filter(shown) }, tasks: taskPayload(st), groceries: st.groceries.slice(), messages: st.messages.slice(), lunches: Object.assign({}, st.lunches), errors: {} };
       },
       choices() {
         return {
@@ -317,6 +330,7 @@
           })),
           taskLists: TASK_LISTS.map((l) => Object.assign({}, l)),
           groceryListId: 'lg',
+          messageListId: 'lm',
         };
       },
       completeTask(t) { const st = state(); st.done.push(t.id); save('hd.demo', st); return { tasks: taskPayload(st) }; },
@@ -331,6 +345,18 @@
         st.groceries = st.groceries.filter((g) => g.id !== id);
         save('hd.demo', st);
         return { groceries: st.groceries.slice() };
+      },
+      addMessage(text) {
+        const st = state();
+        st.messages.unshift({ id: 'm' + (++st.seq), text: text, updated: new Date().toISOString() });
+        save('hd.demo', st);
+        return { messages: st.messages.slice() };
+      },
+      doneMessage(id) {
+        const st = state();
+        st.messages = st.messages.filter((x) => x.id !== id);
+        save('hd.demo', st);
+        return { messages: st.messages.slice() };
       },
       setLunches(map) {
         const st = state();
@@ -417,6 +443,9 @@
     }
     if (res.tasks) { data.tasks = res.tasks.items || []; data.taskLists = res.tasks.lists || []; }
     if (res.groceries) data.groceries = res.groceries;
+    if (res.messages) data.messages = res.messages;
+    // An Apps Script from before Messages existed sends no 'messages' at all.
+    data.messagesSupported = !!res.messages || !!errors.messages;
     if (res.lunches) data.lunches = res.lunches;
     data.errors = errors;
     data.loaded = true;
@@ -697,7 +726,7 @@
 
   /* ──────────────────────────── tasks ──────────────────────────── */
 
-  const pending = { t: {}, g: {} }; // items checked off but not yet sent (tap again to undo)
+  const pending = { t: {}, g: {}, m: {} }; // items checked off but not yet sent (tap again to undo)
 
   function dueInfo(due) {
     if (!due) return null;
@@ -992,95 +1021,128 @@
       .catch((err) => { data.lunches = before; renderLunch(); toast('Couldn’t save lunches — ' + err.message, 5000); });
   }
 
-  /* ──────────────────────────── front-door camera ──────────────────────────── */
+  /* ──────────────────────────── messages ──────────────────────────── */
 
-  let camPlaying = false;
-  let camStopTimer = null;
-  let camTimers = [];
-  const isStreamMode = () => S.camMode === 'mjpeg' || S.camMode === 'hls' || S.camMode === 'iframe';
-  const camBust = (url) => url + (url.indexOf('?') >= 0 ? '&' : '?') + '_t=' + Date.now();
-
-  function camMediaHTML() {
-    const u = esc(S.camUrl);
-    switch (S.camMode) {
-      case 'snapshot': return '<img class="cam-media" data-snap src="' + esc(camBust(S.camUrl)) + '" alt="Front door snapshot">';
-      case 'mjpeg': return '<img class="cam-media" src="' + u + '" alt="Front door live view"><span class="cam-live">LIVE</span>';
-      case 'hls': return '<video class="cam-media" src="' + u + '" autoplay muted playsinline></video><span class="cam-live">LIVE</span>';
-      case 'iframe': return '<iframe class="cam-media" src="' + u + '" allow="autoplay; fullscreen" referrerpolicy="no-referrer" title="Front door camera"></iframe>';
+  // Names from Settings ("Sam, Alex"): the "For" buttons and the coloured name tags.
+  const msgNames = () => String(S.msgNames || '').split(/,|&|\band\b/i).map((x) => x.trim()).filter(Boolean).slice(0, 8);
+  const NAME_COLORS = ['#ff9f6b', '#6cb4ff', '#c29bff', '#5fd39b', '#f5c04f', '#ff8b9b'];
+  function nameColor(name) {
+    let i = msgNames().map((n) => n.toLowerCase()).indexOf(name.toLowerCase());
+    if (i < 0) { i = 0; for (let k = 0; k < name.length; k++) i = (i * 31 + name.charCodeAt(k)) >>> 0; }
+    return NAME_COLORS[i % NAME_COLORS.length];
+  }
+  // "Alex: piano at 4" → { to: "Alex", text: "piano at 4" }. Only names from Settings count, so "Note: …" stays as text.
+  function splitRecipient(text) {
+    const m = /^\s*([^:]{1,24}):\s*([\s\S]+)$/.exec(text || '');
+    if (m) {
+      const who = m[1].trim().toLowerCase();
+      const known = msgNames().filter((n) => n.toLowerCase() === who)[0];
+      if (known) return { to: known, text: m[2] };
     }
-    return '';
+    return { to: '', text: text || '' };
+  }
+  function timeAgo(iso) {
+    const t = iso ? new Date(iso) : null;
+    if (!t || isNaN(t)) return '';
+    const mins = Math.round((Date.now() - t) / 6e4);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return mins + ' min ago';
+    const days = Math.round((startOfDay(new Date()) - startOfDay(t)) / DAY);
+    if (days <= 0) return Math.round(mins / 60) + ' h ago';
+    if (days === 1) return 'yesterday';
+    if (days < 7) return DOW_LONG[t.getDay()];
+    return MON[t.getMonth()] + ' ' + t.getDate();
+  }
+  function forDay(due) {
+    if (!due) return '';
+    const d = parseYmd(due), diff = Math.round((d - startOfDay(new Date())) / DAY);
+    if (diff < 0) return '';
+    if (diff === 0) return 'for today';
+    if (diff === 1) return 'for tomorrow';
+    return 'for ' + (diff < 7 ? DOW_LONG[d.getDay()] : MON[d.getMonth()] + ' ' + d.getDate());
+  }
+  const msgTitle = () => (S.msgTitle || '').trim() || 'Messages';
+
+  function renderMessages() {
+    $('#msgTitle').textContent = msgTitle();
+    const items = data.messages || [];
+    let html = data.errors.messages ? cardError(data.errors.messages) : '';
+    if (data.loaded && !isDemo() && !data.messagesSupported) {
+      html += '<div class="empty">To use Messages, paste the newest Code.gs into Apps Script and deploy a new version (see README).</div>';
+    } else if (!items.length) {
+      html += data.loaded ? '<div class="empty">No messages. Tap + to leave one, or add one to the Messages list in Google Tasks.</div>' : '';
+    } else {
+      html += '<ul class="msg-list">' + items.map((x) => {
+        const r = splitRecipient(x.text);
+        const meta = [forDay(x.due), timeAgo(x.updated)].filter(Boolean).join(' · ');
+        return '<li class="msg' + (pending.m[x.id] ? ' done' : '') + (x.saving ? ' saving' : '') + '" data-mid="' + esc(x.id) + '">' +
+          (r.to ? '<span class="msg-to" style="--n:' + nameColor(r.to) + '">' + esc(r.to) + '</span>' : '') +
+          '<span class="msg-text">' + esc(r.text) + '</span>' +
+          (x.notes ? '<span class="msg-notes">' + esc(x.notes) + '</span>' : '') +
+          (meta ? '<span class="msg-meta">' + esc(meta) + '</span>' : '') + '</li>';
+      }).join('') + '</ul>';
+    }
+    setHTML($('#msgBody'), html);
   }
 
-  // Wire up error messages and snapshot refreshing inside a container.
-  function mountCamMedia(box) {
-    box.innerHTML = camMediaHTML();
-    const media = $('.cam-media', box);
-    if (media && media.tagName !== 'IFRAME') {
-      media.addEventListener('error', () => {
-        if ($('.cam-error', box)) return;
-        const insecure = /^http:/i.test(S.camUrl) && location.protocol === 'https:';
-        box.insertAdjacentHTML('beforeend', '<div class="cam-error"><b>Can’t load the camera</b><span>' +
-          (insecure
-            ? 'The camera address starts with http:// but this dashboard is on https://, so the iPad blocks it. See “Front door camera” in the README.'
-            : 'Check the camera URL in Settings and that the camera server is running.') + '</span></div>');
+  function onMessageTap(id) {
+    if (id.indexOf('tmp') === 0) return;
+    const x = (data.messages || []).filter((y) => y.id === id)[0];
+    if (!x) return;
+    toggleDone('m', id, () => {
+      data.messages = data.messages.filter((y) => y.id !== id);
+      renderMessages();
+      Backend.doneMessage(id)
+        .then((res) => { if (res && res.messages) { data.messages = res.messages; renderMessages(); } })
+        .catch((err) => { data.messages.push(x); renderMessages(); toast('Couldn’t clear message — ' + err.message, 5000); });
+    }, renderMessages);
+  }
+
+  function addMessageText(text) {
+    const temp = { id: 'tmp' + Date.now(), text: text, updated: new Date().toISOString(), saving: true };
+    data.messages = [temp].concat(data.messages || []);
+    renderMessages();
+    Backend.addMessage(text)
+      .then((res) => {
+        data.messages = res && res.messages ? res.messages : data.messages.map((y) => (y === temp ? { id: y.id, text: y.text, updated: y.updated } : y));
+        renderMessages();
+        toast('Message posted');
+      })
+      .catch((err) => {
+        data.messages = data.messages.filter((y) => y !== temp);
+        renderMessages();
+        toast('Couldn’t post — ' + err.message, 5000);
       });
-    }
-    if (S.camMode === 'snapshot') {
-      const t = setInterval(() => {
-        const img = $('img[data-snap]', box);
-        if (!img || document.hidden) return;
-        const pre = new Image();
-        pre.onload = () => { img.src = pre.src; const er = $('.cam-error', box); if (er) er.remove(); };
-        pre.src = camBust(S.camUrl);
-      }, Math.max(2, +S.camRefresh || 10) * 1000);
-      camTimers.push(t);
-      return t;
-    }
-    return null;
   }
 
-  function renderCam() {
-    camTimers.forEach(clearInterval);
-    camTimers = [];
-    const body = $('#camBody'), tools = $('#camTools');
-    const appBtn = S.camLink
-      ? '<a class="mini-btn" href="' + esc(S.camLink) + '" target="_blank" rel="noopener" aria-label="' + esc(S.camLinkLabel || 'Open camera app') + '">' + icon('external') + '</a>'
-      : '';
-
-    if (S.camMode === 'none' || (S.camMode !== 'link' && !S.camUrl)) {
-      tools.innerHTML = appBtn;
-      body.innerHTML = '<div class="cam-empty">' + icon('video', 'big') +
-        '<div class="cam-empty-title">Camera not set up yet</div>' +
-        '<div class="cam-empty-sub">Add your doorbell’s live stream, or a button that opens its app.</div>' +
-        '<button class="btn small" type="button" data-act="settings-cam">Set up camera</button></div>';
-      return;
-    }
-    if (S.camMode === 'link') {
-      tools.innerHTML = '';
-      body.innerHTML = '<a class="cam-launch" href="' + esc(S.camLink || '#') + '" target="_blank" rel="noopener">' +
-        icon('video', 'big') + '<span>' + esc(S.camLinkLabel || 'Open camera') + '</span></a>';
-      return;
-    }
-    tools.innerHTML = appBtn + '<button class="mini-btn" type="button" data-act="cam-full" aria-label="Full screen">' + icon('expand') + '</button>';
-    if (isStreamMode() && S.camTapToPlay && !camPlaying) {
-      body.innerHTML = '<button class="cam-poster" type="button" data-act="cam-play">' + icon('play', 'big') + '<span>Tap for live view</span></button>';
-      return;
-    }
-    mountCamMedia(body);
-  }
-
-  function playCam() {
-    camPlaying = true;
-    renderCam();
-    clearTimeout(camStopTimer);
-    camStopTimer = setTimeout(() => { camPlaying = false; renderCam(); }, 3 * 60e3);
-  }
-
-  function openCamFull() {
-    const m = openModal('<div class="cam-full" id="camFull"></div>' +
-      '<button class="icon-btn cam-full-close" type="button" data-close aria-label="Close">' + icon('close') + '</button>',
-      { cls: 'modal-cam', onClose: () => { if (t) clearInterval(t); } });
-    const t = mountCamMedia($('#camFull', m));
+  function openMessageComposer() {
+    const names = msgNames();
+    const m = openModal(
+      '<div class="modal-head"><h2>New message</h2><button class="icon-btn" type="button" data-close aria-label="Close">' + icon('close') + '</button></div>' +
+      (names.length
+        ? '<div class="chips-label">For</div><div class="chips">' + ['Everyone'].concat(names).map((n, i) =>
+            '<button type="button" class="chip' + (i === 0 ? ' on' : '') + '" data-to="' + esc(n) + '">' + esc(n) + '</button>').join('') + '</div>'
+        : '') +
+      '<form class="ask-row msg-compose" data-msg><input type="text" id="msgText" placeholder="Write a message…" maxlength="300" autocomplete="off">' +
+      '<button type="button" class="round-btn mic" id="msgMic" aria-label="Say the message">' + icon('mic') + '</button></form>' +
+      '<div class="modal-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn primary" type="button" data-send>Post message</button></div>',
+      { cls: 'modal-msg' });
+    const input = $('#msgText', m);
+    let to = 'Everyone';
+    const send = () => {
+      const text = input.value.trim();
+      if (!text) { input.focus(); return; }
+      closeModal();
+      addMessageText((to !== 'Everyone' ? to + ': ' : '') + text);
+    };
+    m.addEventListener('click', (e) => {
+      const chip = e.target.closest('[data-to]');
+      if (chip) { to = chip.getAttribute('data-to'); $$('[data-to]', m).forEach((c) => c.classList.toggle('on', c === chip)); return; }
+      if (e.target.closest('[data-send]')) send();
+    });
+    $('[data-msg]', m).addEventListener('submit', (e) => { e.preventDefault(); send(); });
+    $('#msgMic', m).addEventListener('click', () => dictate(input, $('#msgMic', m), () => {}));
+    input.focus();
   }
 
   /* ──────────────────────────── Ask AI ──────────────────────────── */
@@ -1158,7 +1220,7 @@
 
   /* ──────────────────────────── settings modal ──────────────────────────── */
 
-  function openSettings(section) {
+  function openSettings() {
     let place = { name: S.place, lat: S.lat, lon: S.lon };
     const opt = (v, list) => list.map((o) => '<option value="' + esc(o[0]) + '"' + (String(v) === String(o[0]) ? ' selected' : '') + '>' + esc(o[1]) + '</option>').join('');
     const m = openModal(`
@@ -1195,6 +1257,17 @@
           <p class="hint">Items you add on the dashboard (typed or by voice) go into this list. Checking items off here or in the Google Tasks app on your phone updates both.</p>
         </fieldset>
 
+        <fieldset id="sMsgSection">
+          <legend>Messages</legend>
+          <div class="grid2">
+            <label class="field"><span>Card title</span><input id="sMsgTitle" type="text" value="${esc(S.msgTitle)}" placeholder="e.g. Messages for the kids"></label>
+            <label class="field"><span>Names, separated by commas</span><input id="sMsgNames" type="text" value="${esc(S.msgNames)}" placeholder="e.g. Sam, Alex"></label>
+          </div>
+          <label class="field"><span>Google Tasks list used for messages</span>
+            <select id="sMsgList"><option value="">Loading…</option></select></label>
+          <p class="hint">Post from your phone by adding a task to this list in Google Tasks. Start it with a name and a colon (“Sam: piano at 4”) to address someone; on the iPad, tap + and pick who it’s for. Tap a message on the dashboard to clear it.</p>
+        </fieldset>
+
         <fieldset>
           <legend>Weather</legend>
           <div class="row"><input id="sPlaceQ" type="text" placeholder="Search for your town or city" autocomplete="off">
@@ -1222,27 +1295,6 @@
         <fieldset>
           <legend>School lunches</legend>
           <label class="field"><span>Child’s name</span><input id="sChild" type="text" value="${esc(S.childName)}" placeholder="e.g. Sam"></label>
-        </fieldset>
-
-        <fieldset id="sCamSection">
-          <legend>Front door camera</legend>
-          <label class="field"><span>What to show</span><select id="sCamMode">${opt(S.camMode, [
-            ['none', 'Nothing yet'],
-            ['link', 'A big button that opens the camera’s app or website'],
-            ['snapshot', 'Snapshot image that refreshes'],
-            ['mjpeg', 'Live MJPEG stream'],
-            ['hls', 'Live HLS video (.m3u8)'],
-            ['iframe', 'Live player web page (go2rtc, Scrypted, Home Assistant…)'],
-          ])}</select></label>
-          <label class="field"><span>Stream or image URL (must start with https://)</span>
-            <input id="sCamUrl" type="url" value="${esc(S.camUrl)}" placeholder="https://…/api/stream.m3u8?src=front_door" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
-          <div class="grid2">
-            <label class="field"><span>Snapshot refresh (seconds)</span><input id="sCamRefresh" type="number" min="2" max="600" value="${esc(S.camRefresh)}"></label>
-            <label class="field"><span>Button label</span><input id="sCamLinkLabel" type="text" value="${esc(S.camLinkLabel)}" placeholder="Open Ring"></label>
-          </div>
-          <label class="field"><span>App / website link (optional)</span>
-            <input id="sCamLink" type="url" value="${esc(S.camLink)}" placeholder="https://account.ring.com/account/dashboard" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
-          <label class="check-field"><input type="checkbox" id="sCamTap" ${S.camTapToPlay ? 'checked' : ''}> Only stream when tapped (saves a battery doorbell)</label>
         </fieldset>
 
         <fieldset>
@@ -1280,12 +1332,12 @@
         if (!st.items) return;
         box.innerHTML = st.items.length
           ? st.items.map((c) => {
-              const off = !!st.disabled[c.id];
+              const off = st.disabled[c.id] || '';
               const on = !off && (st.choice ? st.choice.indexOf(c.id) >= 0 : c.shownByDefault);
               return '<label class="cal-pick' + (off ? ' off' : '') + '"><input type="checkbox" value="' + esc(c.id) + '"' +
                 (on ? ' checked' : '') + (off ? ' disabled' : '') + '>' +
                 (c.color ? '<span class="swatch" style="background:' + safeColor(c.color) + '"></span>' : '') +
-                '<span class="nm">' + esc(c.name) + (off ? ' <small>(used for Groceries)</small>' : '') + '</span></label>';
+                '<span class="nm">' + esc(c.name) + (off ? ' <small>(used for ' + esc(off) + ')</small>' : '') + '</span></label>';
             }).join('')
           : '<span class="hint">Nothing found in this Google account.</span>';
         note.textContent = st.choice ? '' : describeDefault(st.items);
@@ -1305,14 +1357,19 @@
     });
 
     // ── grocery list menu ──
-    const grocSel = $('#sGrocList', m);
+    const grocSel = $('#sGrocList', m), msgSel = $('#sMsgList', m);
     let grocChoice = S.groceryListId || '';
-    function markGroceryList() {
+    let msgChoice = S.messageListId || '';
+    function markGroceryList() { // the grocery and message lists can't also be ticked under Tasks
       taskPick.disabled = {};
-      if (grocSel.value) taskPick.disabled[grocSel.value] = true;
+      if (grocSel.value) taskPick.disabled[grocSel.value] = 'Groceries';
+      if (msgSel.value) taskPick.disabled[msgSel.value] = 'Messages';
       taskPick.render();
     }
     grocSel.addEventListener('change', () => { grocChoice = grocSel.value; markGroceryList(); });
+    msgSel.addEventListener('change', () => { msgChoice = msgSel.value; markGroceryList(); });
+    const listOptions = (lists, current) => lists.map((l) =>
+      '<option value="' + esc(l.id) + '"' + (l.id === current ? ' selected' : '') + '>' + esc(l.name) + '</option>').join('');
 
     const token = {};
     m._settingsToken = token;
@@ -1322,10 +1379,15 @@
         calPick.items = r.calendars;
         calPick.render();
         taskPick.items = r.taskLists;
-        if (grocChoice && !r.taskLists.some((l) => l.id === grocChoice)) grocChoice = ''; // that list was deleted
-        const current = grocChoice || r.groceryListId;
-        grocSel.innerHTML = r.taskLists.map((l) =>
-          '<option value="' + esc(l.id) + '"' + (l.id === current ? ' selected' : '') + '>' + esc(l.name) + '</option>').join('');
+        const exists = (id) => r.taskLists.some((l) => l.id === id);
+        if (grocChoice && !exists(grocChoice)) grocChoice = ''; // that list was deleted
+        if (msgChoice && !exists(msgChoice)) msgChoice = '';
+        grocSel.innerHTML = listOptions(r.taskLists, grocChoice || r.groceryListId);
+        if (r.messageListId) msgSel.innerHTML = listOptions(r.taskLists, msgChoice || r.messageListId);
+        else { // an Apps Script from before Messages existed
+          msgSel.innerHTML = '<option value="">Messages (update the Apps Script to use)</option>';
+          msgSel.disabled = true;
+        }
         markGroceryList();
       })
       .catch((err) => {
@@ -1337,14 +1399,21 @@
         taskPick.fail(msg);
         grocSel.innerHTML = '<option value="">Groceries (update the Apps Script to choose)</option>';
         grocSel.disabled = true;
+        msgSel.innerHTML = '<option value="">Messages (update the Apps Script to use)</option>';
+        msgSel.disabled = true;
       });
 
     function collect() {
       const grocery = grocSel.disabled ? (S.groceryListId || '') : grocChoice;
+      const message = msgSel.disabled ? (S.messageListId || '') : msgChoice;
+      const own = [grocery || grocSel.value, message || msgSel.value];
       return Object.assign({}, S, {
         calendarIds: calPick.choice,
-        taskListIds: taskPick.choice ? taskPick.choice.filter((id) => id !== (grocery || grocSel.value)) : null,
+        taskListIds: taskPick.choice ? taskPick.choice.filter((id) => own.indexOf(id) < 0) : null,
         groceryListId: grocery,
+        messageListId: message,
+        msgTitle: val('sMsgTitle'),
+        msgNames: val('sMsgNames'),
         apiUrl: val('sApiUrl'),
         apiKey: val('sApiKey'),
         place: place.name || '',
@@ -1358,12 +1427,6 @@
         nightMode: $('#sNight', m).checked,
         nightStart: val('sNightStart') || '22:00',
         nightEnd: val('sNightEnd') || '06:00',
-        camMode: val('sCamMode'),
-        camUrl: val('sCamUrl'),
-        camRefresh: Math.max(2, +val('sCamRefresh') || 10),
-        camLink: val('sCamLink'),
-        camLinkLabel: val('sCamLinkLabel'),
-        camTapToPlay: $('#sCamTap', m).checked,
         aiLinks: $('#sAi', m).value.trim() || DEFAULT_AI,
       });
     }
@@ -1447,16 +1510,19 @@
     });
 
     $('#sSave', m).addEventListener('click', () => {
+      if (!grocSel.disabled && !msgSel.disabled && grocSel.value && grocSel.value === msgSel.value) {
+        toast('Pick different Google Tasks lists for Groceries and Messages', 4500);
+        return;
+      }
       const before = S;
       S = collect();
       // Calendar and list IDs belong to one Google account; start fresh if the connection changed.
-      if (S.apiUrl !== before.apiUrl) { S.calendarIds = null; S.taskListIds = null; S.groceryListId = ''; }
+      if (S.apiUrl !== before.apiUrl) { S.calendarIds = null; S.taskListIds = null; S.groceryListId = ''; S.messageListId = ''; }
       saveSettings();
       closeModal();
       applySettings(before);
     });
 
-    if (section === 'cam') setTimeout(() => { const el = $('#sCamSection', m); if (el) el.scrollIntoView({ block: 'start' }); }, 50);
   }
 
   function applySettings(before) {
@@ -1467,9 +1533,7 @@
       save('hd.cache', null);
     }
     if (before.lat !== S.lat || before.lon !== S.lon || before.units !== S.units) weather = null;
-    camPlaying = false;
     renderAll();
-    renderCam();
     refreshWeather();
     refreshData();
   }
@@ -1524,6 +1588,7 @@
     renderTasks();
     renderGroceries();
     renderLunch();
+    renderMessages();
   }
 
   const bootAt = Date.now();
@@ -1584,6 +1649,12 @@
       dictate(inp, $('#micBtn'), (text) => { inp.value = ''; addGroceryText(text, true); });
     });
 
+    $('#msgAdd').addEventListener('click', openMessageComposer);
+    $('#msgBody').addEventListener('click', (e) => {
+      const li = e.target.closest('[data-mid]');
+      if (li) onMessageTap(li.getAttribute('data-mid'));
+    });
+
     $('#lunchPrev').addEventListener('click', () => { lunchOffset--; lunchNavAt = Date.now(); renderLunch(); });
     $('#lunchNext').addEventListener('click', () => { lunchOffset++; lunchNavAt = Date.now(); renderLunch(); });
     $('#lunchEdit').addEventListener('click', () => openLunchEditor());
@@ -1597,9 +1668,6 @@
       if (!a) return;
       const act = a.getAttribute('data-act');
       if (act === 'settings') openSettings();
-      else if (act === 'settings-cam') openSettings('cam');
-      else if (act === 'cam-full') openCamFull();
-      else if (act === 'cam-play') playCam();
     });
 
     $('#modalWrap').addEventListener('click', (e) => { if (e.target === $('#modalWrap')) closeModal(); });
@@ -1645,7 +1713,6 @@
     weather = loadCachedWeather();
     wire();
     renderAll();
-    renderCam();
     refreshData();
     refreshWeather();
     setInterval(tick, 1000);

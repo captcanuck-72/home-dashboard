@@ -50,12 +50,12 @@
 .cal     { --tint: #7aa7ff; --tint-soft: rgba(122, 167, 255, .14); }
 .tasks   { --tint: #4cc38a; --tint-soft: rgba(76, 195, 138, .14); }
 .grocery { --tint: #f2b33d; --tint-soft: rgba(242, 179, 61, .14); }
-.cam     { --tint: #ff7a8a; --tint-soft: rgba(255, 122, 138, .14); }
+.msg-card { --tint: #4fd1c5; --tint-soft: rgba(79, 209, 197, .14); }
 .lunch   { --tint: #b48cff; --tint-soft: rgba(180, 140, 255, .15); }
 :root[data-theme="light"] .cal     { --tint: #2b67f0; }
 :root[data-theme="light"] .tasks   { --tint: #1f9d62; }
 :root[data-theme="light"] .grocery { --tint: #d08a00; }
-:root[data-theme="light"] .cam     { --tint: #e0485c; }
+:root[data-theme="light"] .msg-card { --tint: #0f9488; }
 :root[data-theme="light"] .lunch   { --tint: #7c4ddb; }
 
 /* ───────── base ───────── */
@@ -106,7 +106,7 @@ svg.ic.big { width: 2.6rem; height: 2.6rem; stroke-width: 1.5; }
   grid-template-rows: auto minmax(0, 1fr) minmax(0, 1fr);
   grid-template-areas:
     "top top     top"
-    "cal tasks   cam"
+    "cal tasks   msg"
     "cal grocery lunch";
 }
 .top {
@@ -121,7 +121,7 @@ svg.ic.big { width: 2.6rem; height: 2.6rem; stroke-width: 1.5; }
 .cal { grid-area: cal; }
 .tasks { grid-area: tasks; }
 .grocery { grid-area: grocery; }
-.cam { grid-area: cam; }
+.msg-card { grid-area: msg; }
 .lunch { grid-area: lunch; }
 
 /* ───────── clock ───────── */
@@ -328,31 +328,24 @@ svg.ic.big { width: 2.6rem; height: 2.6rem; stroke-width: 1.5; }
 .g-name { font-size: .94rem; font-weight: 560; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .g-item.saving { opacity: .5; }
 
-/* ───────── camera ───────── */
-.cam-view { flex: 1 1 auto; min-height: 0; position: relative; border-radius: 14px; overflow: hidden; background: #000; }
-.cam-media { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0; display: block; object-fit: cover; background: #000; }
-.cam-empty, .cam-poster, .cam-launch, .cam-error {
-  position: absolute; top: 0; left: 0; right: 0; bottom: 0;
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .45rem;
-  text-align: center; padding: 1rem;
+/* ───────── messages ───────── */
+.msg-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .45rem; }
+.msg {
+  display: block; padding: .6rem .8rem .55rem; border-radius: 14px 14px 14px 4px;
+  background: var(--card-2); cursor: pointer; transition: opacity .2s;
 }
-.cam-empty { background: var(--card-2); color: var(--muted); }
-.cam-empty .ic, .cam-launch .ic, .cam-poster .ic { color: var(--tint); }
-.cam-empty-title { font-weight: 700; color: var(--text); font-size: 1rem; }
-.cam-empty-sub { font-size: .85rem; max-width: 18rem; line-height: 1.35; }
-.cam-empty .btn { background: var(--tint-soft); color: var(--tint); margin-top: .3rem; }
-.cam-poster, .cam-launch { color: #dfe4ee; font-weight: 700; font-size: 1.05rem; background: radial-gradient(circle at 50% 40%, #232a37, #0d1016 75%); width: 100%; }
-.cam-error { background: rgba(0, 0, 0, .82); color: #e6e9ef; font-size: .85rem; line-height: 1.4; }
-.cam-error b { font-size: .95rem; }
-.cam-live {
-  position: absolute; left: .6rem; top: .6rem; z-index: 2;
-  font-size: .65rem; font-weight: 800; letter-spacing: .08em; color: #fff;
-  background: rgba(220, 38, 38, .9); padding: .15rem .4rem; border-radius: 5px;
+.msg-to {
+  display: inline-block; margin-right: .4rem; padding: .1rem .45rem; border-radius: 6px; vertical-align: .1rem;
+  background: var(--n, var(--tint)); color: #10131a; font-size: .68rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
 }
-.modal.modal-cam { max-width: 92vw; padding: 0; background: #000; position: relative; overflow: hidden; }
-.cam-full { position: relative; width: 88vw; height: 49.5vw; max-height: 82vh; }
-.cam-full .cam-media { object-fit: contain; }
-.cam-full-close { position: absolute; right: .8rem; top: .8rem; z-index: 3; background: rgba(0, 0, 0, .55); color: #fff; }
+.msg-text { font-size: 1.02rem; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
+.msg-notes { display: block; margin-top: .15rem; font-size: .85rem; color: var(--muted); white-space: pre-line; }
+.msg-meta { display: block; margin-top: .25rem; font-size: .74rem; font-weight: 600; color: var(--faint); }
+.msg.done { opacity: .45; }
+.msg.done .msg-text { text-decoration: line-through; }
+.msg.saving { opacity: .55; }
+.chip.on { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+.msg-compose { margin: 1rem 0 0; }
 
 /* ───────── lunches ───────── */
 .lunch-week { display: flex; align-items: center; justify-content: space-between; gap: .5rem; font-size: .85rem; color: var(--muted); margin: -.4rem 0 .45rem; flex: none; }
@@ -504,7 +497,7 @@ svg.ic.big { width: 2.6rem; height: 2.6rem; stroke-width: 1.5; }
       "top top"
       "cal tasks"
       "cal grocery"
-      "cam lunch";
+      "msg lunch";
   }
   .top { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "clock actions" "weather weather"; }
 }
@@ -517,7 +510,7 @@ svg.ic.big { width: 2.6rem; height: 2.6rem; stroke-width: 1.5; }
     height: auto;
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: none;
-    grid-template-areas: "top" "cal" "tasks" "grocery" "lunch" "cam";
+    grid-template-areas: "top" "cal" "msg" "tasks" "grocery" "lunch";
   }
   .top { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "clock actions" "weather weather"; }
   .actions { min-width: 0; }
@@ -527,8 +520,6 @@ svg.ic.big { width: 2.6rem; height: 2.6rem; stroke-width: 1.5; }
   .wx-days { border-left: 0; padding-left: 0; border-top: 1px solid var(--line); padding-top: .7rem; }
   .card-body { -webkit-mask-image: none; mask-image: none; }
   .cal .card-body { max-height: 65vh; }
-  .cam-view { flex: none; height: 56vw; }
   .ld-list { height: auto; }
   .grid2, .grid3 { grid-template-columns: minmax(0, 1fr); }
-  .cam-full { width: 92vw; height: 52vw; }
 }

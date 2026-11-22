@@ -7,7 +7,7 @@ A full-screen family dashboard for an iPad on the wall or kitchen counter:
 - **Tasks**: the Google Tasks lists you choose (just **Family** by default), sorted by due date; tap to check one off (tap again within 2½ seconds to undo)
 - **Groceries**: type or tap the mic to add items ("milk, eggs and bread" becomes three items). The list lives in Google Tasks (the **Groceries** list unless you pick another in Settings), so it is also on your phone in the Google Tasks app at the store.
 - **Ask AI**: one tap opens Claude, ChatGPT, Gemini or Perplexity, optionally with your question already filled in
-- **Front door camera**: a live stream, a refreshing snapshot, or a big button that opens the camera's app
+- **Messages**: a family message board kept in a Google Tasks list called **Messages**. Post from your phone or tap **+** on the iPad, address a message to someone so it gets their coloured name tag, and tap it to clear it.
 - **School lunches**: Monday to Friday lunch orders (titled with your child's name, set in Settings); tap a day to edit, with quick picks for repeat orders
 - **Night clock**: from 10 PM to 6 AM the screen goes black with a dim clock; tap to wake
 
@@ -96,21 +96,15 @@ The page refreshes Google data every 5 minutes and weather every 15, reloads its
 
 The button opens a panel of assistants. If you type or say a question first, Claude, ChatGPT and Perplexity open with it filled in. To change the list, go to **Settings → Ask AI buttons**, one `Name | URL` per line, with `%s` where the question goes.
 
-## Front door camera
+## Messages
 
-A doorbell that pops up on a Fire TV is almost certainly a **Ring** or **Blink**. Amazon does not offer a public video API for either, so the feed can't simply be embedded. You have three options, easiest first:
+The Messages card shows the open tasks in a Google Tasks list called **Messages**, newest first. `setup` creates the list, or you can pick another in ⚙️ **Settings → Messages**.
 
-1. **Button to the app (works today).** In Settings → Front door camera, choose **"A big button that opens the camera's app or website"** and set the link. For Ring, `https://account.ring.com/account/dashboard` opens Ring's website, which has live view. Also install the Ring (or Blink) app on the iPad and allow notifications, so a doorbell press pops up on the iPad just like on the TV.
-2. **Real live view on the dashboard (Ring).** This needs a small always-on computer at home (Raspberry Pi, old laptop, NAS) running a bridge such as **Scrypted** (Ring plugin) or **ring-mqtt + go2rtc**. Then use one of go2rtc's URLs in Settings:
-   - Live video: **HLS** → `https://…/api/stream.m3u8?src=front_door`
-   - Lighter live view: **MJPEG** → `https://…/api/stream.mjpeg?src=front_door`
-   - Snapshot every few seconds (best for battery doorbells): **Snapshot** → `https://…/api/frame.jpeg?src=front_door`
-   - Player page: **Web page** → `https://…/stream.html?src=front_door`
-
-   For a battery doorbell, tick **"Only stream when tapped"**. Constant streaming drains it fast.
-3. **Cameras with RTSP** (Reolink, Amcrest, many Eufy and TP-Link Tapo models) work with go2rtc directly, the same way as option 2.
-
-⚠️ **The camera URL must also be https://.** Because the dashboard is on https, the iPad blocks `http://192.168…` addresses. The simplest fix is **Tailscale** on the home computer (`tailscale serve` gives it an https address) or Home Assistant's remote URL.
+- **Set it up once:** in ⚙️ **Settings → Messages**, give the card a title (for example "Messages for the kids") and the names to address messages to, separated by commas. Both are saved on the iPad only.
+- **Post from the iPad:** tap **+**, choose who it's for (or Everyone), and type or say the message.
+- **Post from your phone:** add a task to the **Messages** list in the Google Tasks app. Start it with a name and a colon, such as `Sam: piano at 4`, to address someone. A task's details appear under the message, and its date shows as "for today" or "for Friday".
+- **Clear a message:** tap it once it's been read (tap again within 2½ seconds to undo). It's marked complete in Google Tasks.
+- **"Hey Siri, message the kids":** make a Shortcut exactly like the grocery one, but with `action` = `addMessage`.
 
 ## Privacy & security
 
@@ -129,4 +123,4 @@ A doorbell that pops up on a Fire TV is almost certainly a **Ring** or **Blink**
 | Tasks card is missing some lists | By default it shows only **Family**. Tick more lists in ⚙️ Settings → Tasks. |
 | Settings looks different from this guide | The iPad is running an older copy: tap ⚙️ → **Reload dashboard**, and check the version at the bottom of Settings. |
 | Weather says "Sample" | Set your town in Settings → Weather. |
-| Camera says it can't load | The URL is `http://` (see the HTTPS note above) or the camera server is off. |
+| Messages card says to update the Apps Script | Paste the newest `Code.gs` and deploy a new version (see "Updating `Code.gs` later"). |

@@ -40,6 +40,10 @@ const CONFIG = {
   // dashboard's Settings → Groceries. Created automatically if missing.
   GROCERY_LIST_NAME: 'Groceries',
 
+  // The family message board, unless you pick a different Google Tasks list in
+  // the dashboard's Settings → Messages. Created automatically if missing.
+  MESSAGE_LIST_NAME: 'Messages',
+
   // Google Tasks lists that should never appear on the dashboard (not even as a choice).
   HIDE_TASK_LISTS: [],
 
@@ -58,13 +62,14 @@ function setup() {
     props.setProperty('DASHBOARD_KEY', key);
   }
   const cals = listCalendars_();
-  const groceryId = groceryListId_();
+  const groceryId = groceryListId_();   // creates "Groceries" if it doesn't exist yet
+  const messageId = messageListId_();   // creates "Messages" if it doesn't exist yet
   const lists = taskLists_();
-  const grocery = lists.filter(function (l) { return l.id === groceryId; })[0];
+  const titleOf = function (id) { return (lists.filter(function (l) { return l.id === id; })[0] || {}).title; };
   console.log('Calendars on the dashboard: ' + cals.map(function (c) { return c.name; }).join(', '));
   console.log('Task lists: ' + lists.map(function (l) { return l.title; }).join(', '));
   console.log('Tasks card shows (until you pick in Settings): ' + getTasks_().lists.join(', '));
-  console.log('Grocery list: "' + (grocery ? grocery.title : CONFIG.GROCERY_LIST_NAME) + '" (in Google Tasks)');
+  console.log('Grocery list: "' + titleOf(groceryId) + '" · Message board: "' + titleOf(messageId) + '" (both in Google Tasks)');
   console.log('YOUR DASHBOARD KEY →  ' + key);
 }
 
@@ -119,7 +124,12 @@ function route_(action, p) {
 
     case 'lists':
       // Everything the dashboard's Settings can choose from: calendars, task lists, grocery list.
-      return { calendars: pickableCalendars_(), taskLists: pickableTaskLists_(), groceryListId: groceryListId_() };
+      return {
+        calendars: pickableCalendars_(),
+        taskLists: pickableTaskLists_(),
+        groceryListId: groceryListId_(),
+        messageListId: messageListId_(),
+      };
 
     case 'calendars':
       // Kept for dashboards from before the 'lists' action.
@@ -128,7 +138,7 @@ function route_(action, p) {
     case 'completeTask':
       if (!p.listId || !p.taskId) throw new Error('Missing listId/taskId');
       Tasks.Tasks.patch({ status: 'completed' }, p.listId, p.taskId);
-      return { tasks: getTasks_(p.taskLists, p.groceryList) };
+      return { tasks: getTasks_(p.taskLists, p.groceryList, p.messageList) };
 
     case 'addGrocery':
       // Accepts { items: ['Milk','Eggs'] } from the dashboard, or
@@ -140,6 +150,18 @@ function route_(action, p) {
       if (!p.id) throw new Error('Missing id');
       Tasks.Tasks.patch({ status: 'completed' }, groceryListId_(p.groceryList), p.id);
       return { groceries: getGroceries_(p.groceryList) };
+
+    case 'addMessage': {
+      const text = String(p.text || '').trim().slice(0, 500);
+      if (!text) throw new Error('Nothing to add');
+      Tasks.Tasks.insert({ title: text }, messageListId_(p.messageList)); // new messages go on top
+      return { messages: getMessages_(p.messageList) };
+    }
+
+    case 'doneMessage':
+      if (!p.id) throw new Error('Missing id');
+      Tasks.Tasks.patch({ status: 'completed' }, messageListId_(p.messageList), p.id);
+      return { messages: getMessages_(p.messageList) };
 
     case 'setLunches':
       setLunches_(p.lunches || {});
@@ -157,8 +179,9 @@ function loadAll_(p) {
     try { out[name] = fn(); } catch (err) { out.errors[name] = String((err && err.message) || err); }
   };
   part('calendar', function () { return getEvents_(p.from, p.to, p.calendars); });
-  part('tasks', function () { return getTasks_(p.taskLists, p.groceryList); });
+  part('tasks', function () { return getTasks_(p.taskLists, p.groceryList, p.messageList); });
   part('groceries', function () { return getGroceries_(p.groceryList); });
+  part('messages', function () { return getMessages_(p.messageList); });
   part('lunches', getLunches_);
   return out;
 }
@@ -321,10 +344,6 @@ function taskLists_() {
   return LISTS_CACHE_;
 }
 
-function isGroceryList_(list) {
-  return String(list.title || '').trim().toLowerCase() === CONFIG.GROCERY_LIST_NAME.trim().toLowerCase();
-}
-
 function listTasks_(listId) {
   const out = [];
   let pageToken;
@@ -362,12 +381,12 @@ function defaultTaskLists_(lists) {
 /**
  * Open tasks for the Tasks card. `ids` comes from the checkboxes in the
  * dashboard's Settings → Tasks; without it, DEFAULT_TASK_LISTS is used.
- * The grocery list is never shown here — it has its own card.
+ * The grocery and message lists are never shown here — they have their own cards.
  */
-function getTasks_(ids, groceryPref) {
-  const groceryId = groceryListId_(groceryPref);
+function getTasks_(ids, groceryPref, messagePref) {
+  const own = [groceryListId_(groceryPref), messageListId_(messagePref)];
   if (typeof ids === 'string') ids = ids.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
-  const candidates = visibleTaskLists_().filter(function (l) { return l.id !== groceryId; });
+  const candidates = visibleTaskLists_().filter(function (l) { return own.indexOf(l.id) === -1; });
   const lists = Array.isArray(ids)
     ? candidates.filter(function (l) { return ids.indexOf(l.id) !== -1; })
     : defaultTaskLists_(candidates);
@@ -392,10 +411,10 @@ function getTasks_(ids, groceryPref) {
 
 /** Every task list, for the Tasks checkboxes and Groceries menu in the dashboard's Settings. */
 function pickableTaskLists_() {
-  const groceryId = groceryListId_();
+  const own = [groceryListId_(), messageListId_()];
   const lists = visibleTaskLists_();
   const defaults = {};
-  defaultTaskLists_(lists.filter(function (l) { return l.id !== groceryId; }))
+  defaultTaskLists_(lists.filter(function (l) { return own.indexOf(l.id) === -1; }))
     .forEach(function (l) { defaults[l.id] = true; });
   return lists.map(function (l) {
     return { id: l.id, name: l.title, shownByDefault: !!defaults[l.id] };
@@ -408,16 +427,40 @@ function pickableTaskLists_() {
  * GROCERY_LIST_NAME — created if it doesn't exist yet.
  */
 function groceryListId_(preferred) {
+  return namedListId_(preferred, CONFIG.GROCERY_LIST_NAME);
+}
+
+/** The message-board list: picked in Settings, else the list named MESSAGE_LIST_NAME (created if missing). */
+function messageListId_(preferred) {
+  return namedListId_(preferred, CONFIG.MESSAGE_LIST_NAME);
+}
+
+function namedListId_(preferred, name) {
   const lists = taskLists_();
   if (preferred) {
     const picked = lists.filter(function (l) { return l.id === preferred; })[0];
     if (picked) return picked.id;
   }
-  const found = lists.filter(isGroceryList_)[0];
+  const found = lists.filter(function (l) { return lower_(l.title) === lower_(name); })[0];
   if (found) return found.id;
-  const created = Tasks.Tasklists.insert({ title: CONFIG.GROCERY_LIST_NAME });
+  const created = Tasks.Tasklists.insert({ title: name });
   LISTS_CACHE_.push(created);
   return created.id;
+}
+
+/* ───────────────────────── messages (a Google Tasks list) ───────────────────────── */
+
+/** Open messages, top of the list first. A message's details and date come from the task's notes and due date. */
+function getMessages_(preferred) {
+  return listTasks_(messageListId_(preferred)).map(function (t) {
+    return {
+      id: t.id,
+      text: String(t.title).trim(),
+      notes: t.notes || '',
+      due: t.due ? String(t.due).slice(0, 10) : null,
+      updated: t.updated || null,
+    };
+  });
 }
 
 function getGroceries_(preferred) {
