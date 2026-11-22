@@ -119,6 +119,7 @@
     clock24: !LOCALE_12H,
     theme: 'dark',
     calendarDays: 7,
+    calendarIds: null, // null = follow the calendars ticked in Google Calendar; or an array of IDs picked in Settings
     childName: '',
     nightMode: true,
     nightStart: '22:00',
@@ -199,7 +200,10 @@
   }
 
   const Backend = {
-    loadAll: () => isDemo() ? Promise.resolve(Demo.loadAll()) : api('all', calRange()),
+    loadAll: () => isDemo()
+      ? Promise.resolve(Demo.loadAll())
+      : api('all', Object.assign(calRange(), Array.isArray(S.calendarIds) ? { calendars: S.calendarIds } : {})),
+    listCalendars: () => isDemo() ? Promise.resolve(Demo.calendars()) : api('calendars').then((r) => r.calendars || []),
     completeTask: (t) => isDemo() ? Promise.resolve(Demo.completeTask(t)) : api('completeTask', { listId: t.listId, taskId: t.id }),
     addGroceries: (items) => isDemo() ? Promise.resolve(Demo.addGroceries(items)) : api('addGrocery', { items: items }),
     checkGrocery: (id) => isDemo() ? Promise.resolve(Demo.checkGrocery(id)) : api('checkGrocery', { id: id }),
@@ -220,12 +224,13 @@
     function timed(id, day, h, m, mins, title, cal, loc) {
       const s = addDays(today0(), day); s.setHours(h, m, 0, 0);
       const c = cal === 'kid' ? { name: S.childName || 'Kids', color: CALS.kid.color } : CALS[cal];
-      return { id: id, title: title, start: s.toISOString(), end: new Date(s.getTime() + mins * 6e4).toISOString(), allDay: false, location: loc || '', calendar: c.name, color: c.color };
+      return { id: id, calId: cal, title: title, start: s.toISOString(), end: new Date(s.getTime() + mins * 6e4).toISOString(), allDay: false, location: loc || '', calendar: c.name, color: c.color };
     }
     function allDay(id, day, days, title, cal) {
       const s = addDays(today0(), day);
-      return { id: id, title: title, start: ymd(s), end: ymd(addDays(s, days)), allDay: true, location: '', calendar: CALS[cal].name, color: CALS[cal].color };
+      return { id: id, calId: cal, title: title, start: ymd(s), end: ymd(addDays(s, days)), allDay: true, location: '', calendar: CALS[cal].name, color: CALS[cal].color };
     }
+    const shown = (e) => !Array.isArray(S.calendarIds) || S.calendarIds.indexOf(e.calId) >= 0;
     function events() {
       const kid = S.childName || 'kids';
       return [
@@ -276,7 +281,12 @@
     return {
       loadAll() {
         const st = state();
-        return { calendar: { events: events() }, tasks: taskPayload(st), groceries: st.groceries.slice(), lunches: Object.assign({}, st.lunches), errors: {} };
+        return { calendar: { events: events().filter(shown) }, tasks: taskPayload(st), groceries: st.groceries.slice(), lunches: Object.assign({}, st.lunches), errors: {} };
+      },
+      calendars() {
+        return Object.keys(CALS).map((k) => ({
+          id: k, name: k === 'kid' ? (S.childName || CALS.kid.name) : CALS[k].name, color: CALS[k].color, shownByDefault: true,
+        }));
       },
       completeTask(t) { const st = state(); st.done.push(t.id); save('hd.demo', st); return { tasks: taskPayload(st) }; },
       addGroceries(items) {
@@ -589,6 +599,10 @@
     const today = startOfDay(now);
     const n = S.calendarDays;
     $('#calMeta').textContent = 'Next ' + n + ' days';
+    if (Array.isArray(S.calendarIds) && !S.calendarIds.length) {
+      setHTML($('#calBody'), '<div class="empty">No calendars selected. Tick some in Settings → Calendars.</div>');
+      return;
+    }
 
     const days = [];
     for (let i = 0; i < n; i++) days.push({ date: addDays(today, i), items: [] });
@@ -1129,6 +1143,13 @@
           <p class="hint">Leave these blank to keep using demo data. Steps to create the web app are in <b>README.md</b>.</p>
         </fieldset>
 
+        <fieldset id="sCalSection">
+          <legend>Calendars</legend>
+          <div class="cal-picks" id="sCals"><span class="hint">Loading your calendars…</span></div>
+          <div class="row"><button class="btn small" type="button" id="sCalsReset">Match Google Calendar</button><span class="hint cal-note" id="sCalsNote"></span></div>
+          <p class="hint">Unticked calendars are hidden on this dashboard only. They stay visible in Google Calendar.</p>
+        </fieldset>
+
         <fieldset>
           <legend>Weather</legend>
           <div class="row"><input id="sPlaceQ" type="text" placeholder="Search for your town or city" autocomplete="off">
@@ -1198,8 +1219,42 @@
     `, { cls: 'modal-settings' });
 
     const val = (id) => $('#' + id, m).value.trim();
+
+    // ── calendar checkboxes ──
+    const token = {};
+    m._settingsToken = token;
+    let calChoice = Array.isArray(S.calendarIds) ? S.calendarIds.slice() : null; // null = follow Google Calendar's ticks
+    let calList = null;
+    function renderCalPicks() {
+      const box = $('#sCals', m);
+      if (!calList || !box) return;
+      box.innerHTML = calList.length
+        ? calList.map((c) => {
+            const on = calChoice ? calChoice.indexOf(c.id) >= 0 : c.shownByDefault;
+            return '<label class="cal-pick"><input type="checkbox" value="' + esc(c.id) + '"' + (on ? ' checked' : '') + '>' +
+              '<span class="swatch" style="background:' + safeColor(c.color) + '"></span><span class="nm">' + esc(c.name) + '</span></label>';
+          }).join('')
+        : '<span class="hint">No calendars found in this Google account.</span>';
+      $('#sCalsNote', m).textContent = calChoice ? '' : 'Showing the calendars ticked in Google Calendar.';
+    }
+    $('#sCals', m).addEventListener('change', () => {
+      calChoice = $$('#sCals input', m).filter((i) => i.checked).map((i) => i.value);
+      $('#sCalsNote', m).textContent = calChoice.length ? '' : 'Nothing ticked: the calendar card will be empty.';
+    });
+    $('#sCalsReset', m).addEventListener('click', () => { calChoice = null; renderCalPicks(); });
+    Backend.listCalendars()
+      .then((list) => { if (m._settingsToken !== token) return; calList = list; renderCalPicks(); })
+      .catch((err) => {
+        if (m._settingsToken !== token) return;
+        $('#sCals', m).innerHTML = '<span class="hint">' + esc(/Unknown action/.test(err.message)
+          ? 'To choose calendars here, update your Apps Script to the newest Code.gs and deploy a new version (see README).'
+          : 'Couldn’t load your calendars: ' + err.message) + '</span>';
+        $('#sCalsReset', m).classList.add('hidden');
+      });
+
     function collect() {
       return Object.assign({}, S, {
+        calendarIds: calChoice,
         apiUrl: val('sApiUrl'),
         apiKey: val('sApiKey'),
         place: place.name || '',
@@ -1304,6 +1359,8 @@
     $('#sSave', m).addEventListener('click', () => {
       const before = S;
       S = collect();
+      // Calendar IDs belong to one Google account; start fresh if the connection changed.
+      if (S.apiUrl !== before.apiUrl) S.calendarIds = null;
       saveSettings();
       closeModal();
       applySettings(before);

@@ -37,9 +37,15 @@ Do this on a computer, signed in to the Google account that owns your calendars.
    - **Who has access:** Anyone *(needed so the iPad can reach it without signing in; the key keeps strangers out)*
    - Click **Deploy** and copy the **Web app URL** (it ends in `/exec`).
 
-**Which calendars show up?** Every calendar that is ticked in the left sidebar of Google Calendar on the web. To include someone else's calendar (a partner's, say), have them share it with your Google account (**Settings → [their calendar] → Share with specific people**). To add a school or team calendar that has an iCal link, use **Other calendars ➕ → From URL**. To hide, rename or pin specific calendars, edit `CONFIG` at the top of `Code.gs`.
+**Which calendars show up?** Pick them on the dashboard itself: ⚙️ **Settings → Calendars** has a checkbox for every calendar in your account. Unticking one hides it on the dashboard only, not in Google Calendar. Until you pick, the dashboard shows the calendars ticked in Google Calendar's sidebar on the web, and **Match Google Calendar** switches back to that. A calendar added later won't appear until you tick it, unless you're following Google Calendar's ticks.
 
-**After editing `Code.gs` later:** **Deploy → Manage deployments → ✏️ → Version: New version → Deploy**. The URL stays the same.
+- To include someone else's calendar (a partner's, say), have them share it with your Google account (**Settings → [their calendar] → Share with specific people**).
+- To add a school or team calendar that has an iCal link, use **Other calendars ➕ → From URL**.
+- To rename calendars, or to keep one off the dashboard entirely (it won't even get a checkbox), edit `CONFIG` at the top of `Code.gs`.
+
+**Updating `Code.gs` later** (after editing it, or when pasting in a newer version):
+1. Select all the code in the editor, paste the new code over it, and click 💾 **Save**.
+2. Go to **Deploy → Manage deployments → ✏️ → Version: New version → Deploy**. The URL and key stay the same. Without this step, the dashboard keeps using the old version.
 
 ## Step 2: Put the dashboard online (free, HTTPS)
 
@@ -110,6 +116,7 @@ A doorbell that pops up on a Fire TV is almost certainly a **Ring** or **Blink**
 | "Google sent back a web page instead of data" | Redeploy with **Who has access: Anyone** and use the URL ending in `/exec`. |
 | "Wrong dashboard key" | Re-copy the key from the `setup()` log (or run `setup` again; it prints the same key). |
 | Status pill is amber | One section failed (for example, the Tasks API wasn't added). Tap the pill to see which. |
-| A calendar is missing | Tick it in Google Calendar's sidebar on the web, or add its ID to `CALENDAR_IDS` in `Code.gs`. |
+| A calendar is missing | Tick it in ⚙️ Settings → Calendars on the dashboard. If it isn't listed there, check `EXCLUDE_CALENDARS` in `Code.gs`. |
+| Settings → Calendars says to update the Apps Script | Paste the newest `Code.gs` and deploy a new version (see "Updating `Code.gs` later"). |
 | Weather says "Sample" | Set your town in Settings → Weather. |
 | Camera says it can't load | The URL is `http://` (see the HTTPS note above) or the camera server is off. |
