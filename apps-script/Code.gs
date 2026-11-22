@@ -32,10 +32,15 @@ const CONFIG = {
   // e.g. { 'you@gmail.com': 'Me', 'Family calendar 2019': 'Family' }
   RENAME_CALENDARS: {},
 
-  // Google Tasks list used for groceries (created automatically if missing).
+  // Google Tasks lists shown in the Tasks card until you tick lists in the
+  // dashboard's Settings → Tasks. If none of these exist, every list is shown.
+  DEFAULT_TASK_LISTS: ['Family'],
+
+  // The grocery list, unless you pick a different Google Tasks list in the
+  // dashboard's Settings → Groceries. Created automatically if missing.
   GROCERY_LIST_NAME: 'Groceries',
 
-  // Google Tasks lists NOT to show in the dashboard's "Tasks" card.
+  // Google Tasks lists that should never appear on the dashboard (not even as a choice).
   HIDE_TASK_LISTS: [],
 
   // Lunch entries older than this many days are deleted.
@@ -53,11 +58,13 @@ function setup() {
     props.setProperty('DASHBOARD_KEY', key);
   }
   const cals = listCalendars_();
-  const lists = taskLists_().map(function (l) { return l.title; });
-  groceryListId_();
+  const groceryId = groceryListId_();
+  const lists = taskLists_();
+  const grocery = lists.filter(function (l) { return l.id === groceryId; })[0];
   console.log('Calendars on the dashboard: ' + cals.map(function (c) { return c.name; }).join(', '));
-  console.log('Task lists: ' + lists.join(', '));
-  console.log('Grocery list: "' + CONFIG.GROCERY_LIST_NAME + '" (in Google Tasks)');
+  console.log('Task lists: ' + lists.map(function (l) { return l.title; }).join(', '));
+  console.log('Tasks card shows (until you pick in Settings): ' + getTasks_().lists.join(', '));
+  console.log('Grocery list: "' + (grocery ? grocery.title : CONFIG.GROCERY_LIST_NAME) + '" (in Google Tasks)');
   console.log('YOUR DASHBOARD KEY →  ' + key);
 }
 
@@ -110,25 +117,29 @@ function route_(action, p) {
     case 'all':
       return loadAll_(p);
 
+    case 'lists':
+      // Everything the dashboard's Settings can choose from: calendars, task lists, grocery list.
+      return { calendars: pickableCalendars_(), taskLists: pickableTaskLists_(), groceryListId: groceryListId_() };
+
     case 'calendars':
-      // Every calendar the dashboard could show, for the checkboxes in its Settings.
+      // Kept for dashboards from before the 'lists' action.
       return { calendars: pickableCalendars_() };
 
     case 'completeTask':
       if (!p.listId || !p.taskId) throw new Error('Missing listId/taskId');
       Tasks.Tasks.patch({ status: 'completed' }, p.listId, p.taskId);
-      return { tasks: getTasks_() };
+      return { tasks: getTasks_(p.taskLists, p.groceryList) };
 
     case 'addGrocery':
       // Accepts { items: ['Milk','Eggs'] } from the dashboard, or
       // { text: 'milk, eggs and bread' } from a Siri Shortcut.
-      addGroceries_(p.items || p.item || p.text);
-      return { groceries: getGroceries_() };
+      addGroceries_(p.items || p.item || p.text, p.groceryList);
+      return { groceries: getGroceries_(p.groceryList) };
 
     case 'checkGrocery':
       if (!p.id) throw new Error('Missing id');
-      Tasks.Tasks.patch({ status: 'completed' }, groceryListId_(), p.id);
-      return { groceries: getGroceries_() };
+      Tasks.Tasks.patch({ status: 'completed' }, groceryListId_(p.groceryList), p.id);
+      return { groceries: getGroceries_(p.groceryList) };
 
     case 'setLunches':
       setLunches_(p.lunches || {});
@@ -146,8 +157,8 @@ function loadAll_(p) {
     try { out[name] = fn(); } catch (err) { out.errors[name] = String((err && err.message) || err); }
   };
   part('calendar', function () { return getEvents_(p.from, p.to, p.calendars); });
-  part('tasks', getTasks_);
-  part('groceries', getGroceries_);
+  part('tasks', function () { return getTasks_(p.taskLists, p.groceryList); });
+  part('groceries', function () { return getGroceries_(p.groceryList); });
   part('lunches', getLunches_);
   return out;
 }
@@ -335,11 +346,31 @@ function listTasks_(listId) {
     });
 }
 
-function getTasks_() {
-  const hide = CONFIG.HIDE_TASK_LISTS.map(function (s) { return String(s).trim().toLowerCase(); });
-  const lists = taskLists_().filter(function (l) {
-    return !isGroceryList_(l) && hide.indexOf(String(l.title).trim().toLowerCase()) === -1;
-  });
+/** Task lists that may appear on the dashboard at all (HIDE_TASK_LISTS removed). */
+function visibleTaskLists_() {
+  const hide = CONFIG.HIDE_TASK_LISTS.map(lower_);
+  return taskLists_().filter(function (l) { return hide.indexOf(lower_(l.title)) === -1; });
+}
+
+/** The lists shown before anything is picked: DEFAULT_TASK_LISTS, or every list if none of those exist. */
+function defaultTaskLists_(lists) {
+  const want = CONFIG.DEFAULT_TASK_LISTS.map(lower_);
+  const hits = lists.filter(function (l) { return want.indexOf(lower_(l.title)) !== -1; });
+  return hits.length ? hits : lists;
+}
+
+/**
+ * Open tasks for the Tasks card. `ids` comes from the checkboxes in the
+ * dashboard's Settings → Tasks; without it, DEFAULT_TASK_LISTS is used.
+ * The grocery list is never shown here — it has its own card.
+ */
+function getTasks_(ids, groceryPref) {
+  const groceryId = groceryListId_(groceryPref);
+  if (typeof ids === 'string') ids = ids.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+  const candidates = visibleTaskLists_().filter(function (l) { return l.id !== groceryId; });
+  const lists = Array.isArray(ids)
+    ? candidates.filter(function (l) { return ids.indexOf(l.id) !== -1; })
+    : defaultTaskLists_(candidates);
   const items = [];
   lists.forEach(function (l) {
     listTasks_(l.id).forEach(function (t) {
@@ -359,21 +390,43 @@ function getTasks_() {
 
 /* ───────────────────────── groceries (a Google Tasks list) ───────────────────────── */
 
-function groceryListId_() {
-  const found = taskLists_().filter(isGroceryList_)[0];
+/** Every task list, for the Tasks checkboxes and Groceries menu in the dashboard's Settings. */
+function pickableTaskLists_() {
+  const groceryId = groceryListId_();
+  const lists = visibleTaskLists_();
+  const defaults = {};
+  defaultTaskLists_(lists.filter(function (l) { return l.id !== groceryId; }))
+    .forEach(function (l) { defaults[l.id] = true; });
+  return lists.map(function (l) {
+    return { id: l.id, name: l.title, shownByDefault: !!defaults[l.id] };
+  });
+}
+
+/**
+ * The Google Tasks list used for groceries: the one picked in the dashboard's
+ * Settings (`preferred` list ID) if it still exists, otherwise the list named
+ * GROCERY_LIST_NAME — created if it doesn't exist yet.
+ */
+function groceryListId_(preferred) {
+  const lists = taskLists_();
+  if (preferred) {
+    const picked = lists.filter(function (l) { return l.id === preferred; })[0];
+    if (picked) return picked.id;
+  }
+  const found = lists.filter(isGroceryList_)[0];
   if (found) return found.id;
   const created = Tasks.Tasklists.insert({ title: CONFIG.GROCERY_LIST_NAME });
   LISTS_CACHE_.push(created);
   return created.id;
 }
 
-function getGroceries_() {
-  return listTasks_(groceryListId_()).map(function (t) {
+function getGroceries_(preferred) {
+  return listTasks_(groceryListId_(preferred)).map(function (t) {
     return { id: t.id, title: String(t.title).trim() };
   });
 }
 
-function addGroceries_(input) {
+function addGroceries_(input, preferred) {
   let items = Array.isArray(input) ? input : splitItems_(String(input || ''));
   items = items
     .map(function (s) { return String(s).trim().slice(0, 200); })
@@ -381,7 +434,7 @@ function addGroceries_(input) {
     .slice(0, 30);
   if (!items.length) throw new Error('Nothing to add');
 
-  const listId = groceryListId_();
+  const listId = groceryListId_(preferred);
   const have = {};
   listTasks_(listId).forEach(function (t) { have[String(t.title).trim().toLowerCase()] = true; });
 

@@ -100,6 +100,10 @@
 
   /* ──────────────────────────── settings ──────────────────────────── */
 
+  // Bump this together with the ?v= numbers in index.html on every release.
+  // The dashboard notices a new number on the website and reloads itself.
+  const APP_VERSION = '1.2';
+
   const LANG = navigator.language || 'en-US';
   const LOCALE_12H = /[ap]\.?\s?m\.?/i.test(new Date(2020, 0, 1, 13).toLocaleTimeString(LANG));
 
@@ -120,6 +124,8 @@
     theme: 'dark',
     calendarDays: 7,
     calendarIds: null, // null = follow the calendars ticked in Google Calendar; or an array of IDs picked in Settings
+    taskListIds: null, // null = the script's default task lists ("Family"); or an array of list IDs picked in Settings
+    groceryListId: '', // '' = the Google Tasks list called "Groceries"; or the list ID picked in Settings
     childName: '',
     nightMode: true,
     nightStart: '22:00',
@@ -199,14 +205,24 @@
     return { from: from.toISOString(), to: addDays(from, S.calendarDays).toISOString() };
   }
 
+  // The calendars / task lists / grocery list chosen in Settings, sent with every request.
+  function choiceParams() {
+    const p = {};
+    if (Array.isArray(S.calendarIds)) p.calendars = S.calendarIds;
+    if (Array.isArray(S.taskListIds)) p.taskLists = S.taskListIds;
+    if (S.groceryListId) p.groceryList = S.groceryListId;
+    return p;
+  }
+
   const Backend = {
-    loadAll: () => isDemo()
-      ? Promise.resolve(Demo.loadAll())
-      : api('all', Object.assign(calRange(), Array.isArray(S.calendarIds) ? { calendars: S.calendarIds } : {})),
-    listCalendars: () => isDemo() ? Promise.resolve(Demo.calendars()) : api('calendars').then((r) => r.calendars || []),
-    completeTask: (t) => isDemo() ? Promise.resolve(Demo.completeTask(t)) : api('completeTask', { listId: t.listId, taskId: t.id }),
-    addGroceries: (items) => isDemo() ? Promise.resolve(Demo.addGroceries(items)) : api('addGrocery', { items: items }),
-    checkGrocery: (id) => isDemo() ? Promise.resolve(Demo.checkGrocery(id)) : api('checkGrocery', { id: id }),
+    loadAll: () => isDemo() ? Promise.resolve(Demo.loadAll()) : api('all', Object.assign(calRange(), choiceParams())),
+    // Everything Settings can choose from: { calendars, taskLists, groceryListId }
+    listChoices: () => isDemo()
+      ? Promise.resolve(Demo.choices())
+      : api('lists').then((r) => ({ calendars: r.calendars || [], taskLists: r.taskLists || [], groceryListId: r.groceryListId || '' })),
+    completeTask: (t) => isDemo() ? Promise.resolve(Demo.completeTask(t)) : api('completeTask', Object.assign({ listId: t.listId, taskId: t.id }, choiceParams())),
+    addGroceries: (items) => isDemo() ? Promise.resolve(Demo.addGroceries(items)) : api('addGrocery', Object.assign({ items: items }, choiceParams())),
+    checkGrocery: (id) => isDemo() ? Promise.resolve(Demo.checkGrocery(id)) : api('checkGrocery', Object.assign({ id: id }, choiceParams())),
     setLunches: (map) => isDemo() ? Promise.resolve(Demo.setLunches(map)) : api('setLunches', { lunches: map }),
   };
 
@@ -255,13 +271,18 @@
       const d = (n) => ymd(addDays(today0(), n));
       return [
         { id: 't1', listId: 'l1', list: 'My Tasks', title: 'Renew car registration', due: d(-1) },
-        { id: 't2', listId: 'l1', list: 'My Tasks', title: 'Call the plumber about the sink', due: d(0) },
+        { id: 't2', listId: 'l2', list: 'Family', title: 'Call the plumber about the sink', due: d(0) },
         { id: 't3', listId: 'l2', list: 'Family', title: 'Sign field-trip permission form', due: d(1) },
         { id: 't4', listId: 'l2', list: 'Family', title: 'Return library books', due: d(3) },
         { id: 't5', listId: 'l1', list: 'My Tasks', title: 'Book flights for the holidays', due: null },
-        { id: 't6', listId: 'l1', list: 'My Tasks', title: 'Change furnace filter', due: null },
+        { id: 't6', listId: 'l2', list: 'Family', title: 'Change furnace filter', due: null },
       ];
     }
+    const TASK_LISTS = [
+      { id: 'l1', name: 'My Tasks', shownByDefault: false },
+      { id: 'l2', name: 'Family', shownByDefault: true },
+      { id: 'lg', name: 'Groceries', shownByDefault: false },
+    ];
     function state() {
       let st = load('hd.demo', null);
       if (!st || st.v !== 1) {
@@ -277,16 +298,26 @@
       }
       return st;
     }
-    const taskPayload = (st) => ({ lists: ['My Tasks', 'Family'], items: tasks().filter((t) => st.done.indexOf(t.id) < 0) });
+    function taskPayload(st) {
+      const ids = Array.isArray(S.taskListIds) ? S.taskListIds : TASK_LISTS.filter((l) => l.shownByDefault).map((l) => l.id);
+      return {
+        lists: TASK_LISTS.filter((l) => ids.indexOf(l.id) >= 0).map((l) => l.name),
+        items: tasks().filter((t) => ids.indexOf(t.listId) >= 0 && st.done.indexOf(t.id) < 0),
+      };
+    }
     return {
       loadAll() {
         const st = state();
         return { calendar: { events: events().filter(shown) }, tasks: taskPayload(st), groceries: st.groceries.slice(), lunches: Object.assign({}, st.lunches), errors: {} };
       },
-      calendars() {
-        return Object.keys(CALS).map((k) => ({
-          id: k, name: k === 'kid' ? (S.childName || CALS.kid.name) : CALS[k].name, color: CALS[k].color, shownByDefault: true,
-        }));
+      choices() {
+        return {
+          calendars: Object.keys(CALS).map((k) => ({
+            id: k, name: k === 'kid' ? (S.childName || CALS.kid.name) : CALS[k].name, color: CALS[k].color, shownByDefault: true,
+          })),
+          taskLists: TASK_LISTS.map((l) => Object.assign({}, l)),
+          groceryListId: 'lg',
+        };
       },
       completeTask(t) { const st = state(); st.done.push(t.id); save('hd.demo', st); return { tasks: taskPayload(st) }; },
       addGroceries(items) {
@@ -1150,6 +1181,20 @@
           <p class="hint">Unticked calendars are hidden on this dashboard only. They stay visible in Google Calendar.</p>
         </fieldset>
 
+        <fieldset id="sTaskSection">
+          <legend>Tasks</legend>
+          <div class="cal-picks" id="sTaskLists"><span class="hint">Loading your task lists…</span></div>
+          <div class="row"><button class="btn small" type="button" id="sTasksReset">Use default</button><span class="hint cal-note" id="sTasksNote"></span></div>
+          <p class="hint">Choose which Google Tasks lists appear in the Tasks card.</p>
+        </fieldset>
+
+        <fieldset id="sGrocSection">
+          <legend>Groceries</legend>
+          <label class="field"><span>Google Tasks list used for groceries</span>
+            <select id="sGrocList"><option value="">Loading…</option></select></label>
+          <p class="hint">Items you add on the dashboard (typed or by voice) go into this list. Checking items off here or in the Google Tasks app on your phone updates both.</p>
+        </fieldset>
+
         <fieldset>
           <legend>Weather</legend>
           <div class="row"><input id="sPlaceQ" type="text" placeholder="Search for your town or city" autocomplete="off">
@@ -1215,46 +1260,91 @@
             <button class="btn" type="button" id="sImportBtn">Import</button></div>
         </fieldset>
       </div>
-      <div class="modal-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn primary" type="button" id="sSave">Save</button></div>
+      <div class="modal-foot">
+        <button class="btn" type="button" id="sReload">Reload dashboard</button><span class="ver">Version ${APP_VERSION}</span>
+        <span class="grow"></span>
+        <button class="btn" type="button" data-close>Cancel</button><button class="btn primary" type="button" id="sSave">Save</button>
+      </div>
     `, { cls: 'modal-settings' });
 
     const val = (id) => $('#' + id, m).value.trim();
 
-    // ── calendar checkboxes ──
+    $('#sReload', m).addEventListener('click', () => location.reload());
+
+    // ── checkboxes for calendars and task lists ──
+    // choice === null means "use the default"; otherwise it's the list of ticked IDs.
+    function picker(boxId, noteId, resetId, initial, describeDefault) {
+      const box = $('#' + boxId, m), note = $('#' + noteId, m);
+      const st = { choice: Array.isArray(initial) ? initial.slice() : null, items: null, disabled: {} };
+      st.render = () => {
+        if (!st.items) return;
+        box.innerHTML = st.items.length
+          ? st.items.map((c) => {
+              const off = !!st.disabled[c.id];
+              const on = !off && (st.choice ? st.choice.indexOf(c.id) >= 0 : c.shownByDefault);
+              return '<label class="cal-pick' + (off ? ' off' : '') + '"><input type="checkbox" value="' + esc(c.id) + '"' +
+                (on ? ' checked' : '') + (off ? ' disabled' : '') + '>' +
+                (c.color ? '<span class="swatch" style="background:' + safeColor(c.color) + '"></span>' : '') +
+                '<span class="nm">' + esc(c.name) + (off ? ' <small>(used for Groceries)</small>' : '') + '</span></label>';
+            }).join('')
+          : '<span class="hint">Nothing found in this Google account.</span>';
+        note.textContent = st.choice ? '' : describeDefault(st.items);
+      };
+      box.addEventListener('change', () => {
+        st.choice = $$('input', box).filter((i) => i.checked && !i.disabled).map((i) => i.value);
+        note.textContent = st.choice.length ? '' : 'Nothing ticked: this card will be empty.';
+      });
+      $('#' + resetId, m).addEventListener('click', () => { st.choice = null; st.render(); });
+      st.fail = (msg) => { box.innerHTML = '<span class="hint">' + esc(msg) + '</span>'; $('#' + resetId, m).classList.add('hidden'); };
+      return st;
+    }
+    const calPick = picker('sCals', 'sCalsNote', 'sCalsReset', S.calendarIds, () => 'Showing the calendars ticked in Google Calendar.');
+    const taskPick = picker('sTaskLists', 'sTasksNote', 'sTasksReset', S.taskListIds, (items) => {
+      const d = items.filter((l) => l.shownByDefault && !taskPick.disabled[l.id]).map((l) => l.name);
+      return 'Showing the default: ' + (d.length ? listJoin(d) : 'all lists') + '.';
+    });
+
+    // ── grocery list menu ──
+    const grocSel = $('#sGrocList', m);
+    let grocChoice = S.groceryListId || '';
+    function markGroceryList() {
+      taskPick.disabled = {};
+      if (grocSel.value) taskPick.disabled[grocSel.value] = true;
+      taskPick.render();
+    }
+    grocSel.addEventListener('change', () => { grocChoice = grocSel.value; markGroceryList(); });
+
     const token = {};
     m._settingsToken = token;
-    let calChoice = Array.isArray(S.calendarIds) ? S.calendarIds.slice() : null; // null = follow Google Calendar's ticks
-    let calList = null;
-    function renderCalPicks() {
-      const box = $('#sCals', m);
-      if (!calList || !box) return;
-      box.innerHTML = calList.length
-        ? calList.map((c) => {
-            const on = calChoice ? calChoice.indexOf(c.id) >= 0 : c.shownByDefault;
-            return '<label class="cal-pick"><input type="checkbox" value="' + esc(c.id) + '"' + (on ? ' checked' : '') + '>' +
-              '<span class="swatch" style="background:' + safeColor(c.color) + '"></span><span class="nm">' + esc(c.name) + '</span></label>';
-          }).join('')
-        : '<span class="hint">No calendars found in this Google account.</span>';
-      $('#sCalsNote', m).textContent = calChoice ? '' : 'Showing the calendars ticked in Google Calendar.';
-    }
-    $('#sCals', m).addEventListener('change', () => {
-      calChoice = $$('#sCals input', m).filter((i) => i.checked).map((i) => i.value);
-      $('#sCalsNote', m).textContent = calChoice.length ? '' : 'Nothing ticked: the calendar card will be empty.';
-    });
-    $('#sCalsReset', m).addEventListener('click', () => { calChoice = null; renderCalPicks(); });
-    Backend.listCalendars()
-      .then((list) => { if (m._settingsToken !== token) return; calList = list; renderCalPicks(); })
+    Backend.listChoices()
+      .then((r) => {
+        if (m._settingsToken !== token) return;
+        calPick.items = r.calendars;
+        calPick.render();
+        taskPick.items = r.taskLists;
+        if (grocChoice && !r.taskLists.some((l) => l.id === grocChoice)) grocChoice = ''; // that list was deleted
+        const current = grocChoice || r.groceryListId;
+        grocSel.innerHTML = r.taskLists.map((l) =>
+          '<option value="' + esc(l.id) + '"' + (l.id === current ? ' selected' : '') + '>' + esc(l.name) + '</option>').join('');
+        markGroceryList();
+      })
       .catch((err) => {
         if (m._settingsToken !== token) return;
-        $('#sCals', m).innerHTML = '<span class="hint">' + esc(/Unknown action/.test(err.message)
-          ? 'To choose calendars here, update your Apps Script to the newest Code.gs and deploy a new version (see README).'
-          : 'Couldn’t load your calendars: ' + err.message) + '</span>';
-        $('#sCalsReset', m).classList.add('hidden');
+        const msg = /Unknown action/.test(err.message)
+          ? 'To choose here, update your Apps Script to the newest Code.gs and deploy a new version (see README).'
+          : 'Couldn’t load your lists: ' + err.message;
+        calPick.fail(msg);
+        taskPick.fail(msg);
+        grocSel.innerHTML = '<option value="">Groceries (update the Apps Script to choose)</option>';
+        grocSel.disabled = true;
       });
 
     function collect() {
+      const grocery = grocSel.disabled ? (S.groceryListId || '') : grocChoice;
       return Object.assign({}, S, {
-        calendarIds: calChoice,
+        calendarIds: calPick.choice,
+        taskListIds: taskPick.choice ? taskPick.choice.filter((id) => id !== (grocery || grocSel.value)) : null,
+        groceryListId: grocery,
         apiUrl: val('sApiUrl'),
         apiKey: val('sApiKey'),
         place: place.name || '',
@@ -1359,8 +1449,8 @@
     $('#sSave', m).addEventListener('click', () => {
       const before = S;
       S = collect();
-      // Calendar IDs belong to one Google account; start fresh if the connection changed.
-      if (S.apiUrl !== before.apiUrl) S.calendarIds = null;
+      // Calendar and list IDs belong to one Google account; start fresh if the connection changed.
+      if (S.apiUrl !== before.apiUrl) { S.calendarIds = null; S.taskListIds = null; S.groceryListId = ''; }
       saveSettings();
       closeModal();
       applySettings(before);
@@ -1519,6 +1609,7 @@
 
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) return;
+      checkForUpdate();
       if (Date.now() - lastRefresh > 60e3) refreshData();
       if (!weather || !weather.at || Date.now() - weather.at > 10 * 60e3) refreshWeather();
       requestWakeLock();
@@ -1527,6 +1618,25 @@
     window.addEventListener('orientationchange', () => setTimeout(fitForecast, 300));
     document.addEventListener('touchend', requestWakeLock, { passive: true });
     document.addEventListener('click', requestWakeLock);
+  }
+
+  // A wall-mounted iPad never gets reloaded by hand, so look for a newer version on
+  // the website now and then and reload when one appears (once per version, so it
+  // can't loop if the website is mid-update).
+  let lastUpdateCheck = 0;
+  function checkForUpdate() {
+    if (Date.now() - lastUpdateCheck < 5 * 60e3 || !/^https?:/.test(location.protocol)) return;
+    lastUpdateCheck = Date.now();
+    fetch(location.pathname.replace(/[^/]*$/, '') + 'index.html?_=' + Date.now(), { cache: 'no-store' })
+      .then((r) => (r.ok ? r.text() : ''))
+      .then((html) => {
+        const m = /app\.js\?v=([\w.-]+)/.exec(html);
+        if (!m || m[1] === APP_VERSION || load('hd.reloadedFor', '') === m[1]) return;
+        if (modalOpen) { lastUpdateCheck = 0; return; } // don't yank Settings away mid-edit; retry on the next check
+        save('hd.reloadedFor', m[1]);
+        location.reload();
+      })
+      .catch(() => { /* offline: try again later */ });
   }
 
   function init() {
@@ -1541,6 +1651,8 @@
     setInterval(tick, 1000);
     setInterval(() => { if (!document.hidden) refreshData(); }, 5 * 60e3);
     setInterval(() => { if (!document.hidden) refreshWeather(); }, 15 * 60e3);
+    setInterval(() => { if (!document.hidden) checkForUpdate(); }, 30 * 60e3);
+    setTimeout(checkForUpdate, 20e3);
     requestWakeLock();
     if (importedFromHash) setTimeout(() => toast('Settings imported from link'), 400);
   }

@@ -13,7 +13,7 @@
   <link rel="icon" type="image/png" href="icon-192.png">
   <link rel="manifest" href="manifest.webmanifest">
   <title>Home</title>
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=1.2">
 </head>
 <body>
   <main class="dash" id="dash">
@@ -98,6 +98,7 @@
   <div class="modal-wrap" id="modalWrap"><div class="modal" id="modal" role="dialog" aria-modal="true"></div></div>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-  <script src="app.js"></script>
+  <!-- Bump ?v= (and APP_VERSION in app.js) on every release so iPads fetch the new files. -->
+  <script src="app.js?v=1.2"></script>
 </body>
 </html>

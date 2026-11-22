@@ -4,8 +4,8 @@ A full-screen family dashboard for an iPad on the wall or kitchen counter:
 
 - **Clock & weather**: current conditions, a rain/snow heads-up for the next 12 hours, and a multi-day forecast (Open-Meteo, free, no account)
 - **Calendar**: events merged from all your Google Calendars, colour-coded, with the current event highlighted
-- **Tasks**: your Google Tasks, sorted by due date; tap to check one off (tap again within 2½ seconds to undo)
-- **Groceries**: type or tap the mic to add items ("milk, eggs and bread" becomes three items). The list is stored as a Google Tasks list called **Groceries**, so it is also on your phone in the Google Tasks app at the store.
+- **Tasks**: the Google Tasks lists you choose (just **Family** by default), sorted by due date; tap to check one off (tap again within 2½ seconds to undo)
+- **Groceries**: type or tap the mic to add items ("milk, eggs and bread" becomes three items). The list lives in Google Tasks (the **Groceries** list unless you pick another in Settings), so it is also on your phone in the Google Tasks app at the store.
 - **Ask AI**: one tap opens Claude, ChatGPT, Gemini or Perplexity, optionally with your question already filled in
 - **Front door camera**: a live stream, a refreshing snapshot, or a big button that opens the camera's app
 - **School lunches**: Monday to Friday lunch orders (titled with your child's name, set in Settings); tap a day to edit, with quick picks for repeat orders
@@ -43,6 +43,10 @@ Do this on a computer, signed in to the Google account that owns your calendars.
 - To add a school or team calendar that has an iCal link, use **Other calendars ➕ → From URL**.
 - To rename calendars, or to keep one off the dashboard entirely (it won't even get a checkbox), edit `CONFIG` at the top of `Code.gs`.
 
+**Which task lists show up?** ⚙️ **Settings → Tasks** has a checkbox for every Google Tasks list. Until you pick, the Tasks card shows only the list called **Family**, or every list if you don't have one called that. **Use default** switches back. The default list names are set by `DEFAULT_TASK_LISTS` in `Code.gs`.
+
+**Which list holds the groceries?** ⚙️ **Settings → Groceries** lets you choose any Google Tasks list. Until you pick, it's the list called **Groceries**, which `setup` creates if needed. Items added on the iPad go into that list, and checking them off on the iPad or in the Google Tasks app updates both. The grocery list never appears in the Tasks card, so it isn't shown twice.
+
 **Updating `Code.gs` later** (after editing it, or when pasting in a newer version):
 1. Select all the code in the editor, paste the new code over it, and click 💾 **Save**.
 2. Go to **Deploy → Manage deployments → ✏️ → Version: New version → Deploy**. The URL and key stay the same. Without this step, the dashboard keeps using the old version.
@@ -69,6 +73,8 @@ The dashboard must be served over **https://**. Otherwise the iPad blocks the mi
 
 The page refreshes Google data every 5 minutes and weather every 15, reloads itself at 3:30 AM to stay fresh, and keeps showing the last data if the Wi-Fi drops (the status pill turns red).
 
+**Updates install themselves.** About every 30 minutes the dashboard checks whether the website has a newer version and, if so, reloads. You can also tap ⚙️ → **Reload dashboard**. The version number is at the bottom of Settings. If you change the files yourself, raise the `?v=` numbers in `index.html` and `APP_VERSION` in `app.js` to the same new value, or iPads won't notice the change.
+
 ---
 
 ## Adding groceries by voice
@@ -82,7 +88,9 @@ The page refreshes Google data every 5 minutes and weather every 15, reloads its
      - `text` = the **Dictated Text** variable
   3. Optionally add **Show Notification** ("Added!").
   4. Name the shortcut **Add groceries**. Now say "Hey Siri, add groceries", then "milk and bananas".
-- **Phone at the store**: open the **Google Tasks** app, go to the **Groceries** list, and check items off. They disappear from the dashboard too.
+
+  The shortcut adds to the list called **Groceries**. If you picked a different grocery list in the dashboard's Settings, set `GROCERY_LIST_NAME` in `Code.gs` to that list's name (then deploy a new version) so Siri and the dashboard use the same list.
+- **Phone at the store**: open the **Google Tasks** app, go to your grocery list, and check items off. They disappear from the dashboard too.
 
 ## Ask AI
 
@@ -117,6 +125,8 @@ A doorbell that pops up on a Fire TV is almost certainly a **Ring** or **Blink**
 | "Wrong dashboard key" | Re-copy the key from the `setup()` log (or run `setup` again; it prints the same key). |
 | Status pill is amber | One section failed (for example, the Tasks API wasn't added). Tap the pill to see which. |
 | A calendar is missing | Tick it in ⚙️ Settings → Calendars on the dashboard. If it isn't listed there, check `EXCLUDE_CALENDARS` in `Code.gs`. |
-| Settings → Calendars says to update the Apps Script | Paste the newest `Code.gs` and deploy a new version (see "Updating `Code.gs` later"). |
+| Settings says to update the Apps Script | Paste the newest `Code.gs` and deploy a new version (see "Updating `Code.gs` later"). |
+| Tasks card is missing some lists | By default it shows only **Family**. Tick more lists in ⚙️ Settings → Tasks. |
+| Settings looks different from this guide | The iPad is running an older copy: tap ⚙️ → **Reload dashboard**, and check the version at the bottom of Settings. |
 | Weather says "Sample" | Set your town in Settings → Weather. |
 | Camera says it can't load | The URL is `http://` (see the HTTPS note above) or the camera server is off. |
